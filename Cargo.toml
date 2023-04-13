@@ -8,6 +8,7 @@ keywords = ["cryptography", "homomorphic-encryption", "HE", "FHE"]
 license = "MIT"
 
 [dependencies]
+rayon = "1.7.0"
 tfhe = { version = "*", features = ["boolean", "shortint", "x86_64-unix"] }
 
 [[bin]]
