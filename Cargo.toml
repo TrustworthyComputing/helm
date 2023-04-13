@@ -1,0 +1,23 @@
+[package]
+name = "he-rs-test"
+description = "HELM: Homomorphic Evaluation with Lookup table Memoization"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dimitris Mouris <jimouris@udel.edu>", "Charles Gouert <cgouert@udel.edu>"]
+keywords = ["cryptography", "homomorphic-encryption", "HE", "FHE"]
+license = "MIT"
+
+[dependencies]
+tfhe = { version = "*", features = ["boolean", "shortint", "x86_64-unix"] }
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "boolean"
+path = "src/boolean.rs"
+
+[[bin]]
+name = "shortint"
+path = "src/shortint.rs"
