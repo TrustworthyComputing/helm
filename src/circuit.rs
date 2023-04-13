@@ -1,0 +1,94 @@
+use std::collections::{HashMap, hash_map::Entry};
+use std::vec;
+
+// use rayon::prelude::*;
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub enum GateType {
+    And,
+    Or,
+    Xor,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub struct Gate {
+    gate_name: String,
+    gate_type: GateType,
+    input_wires: Vec<String>,
+    output_wire: String,
+    output: Option<bool>,
+    level: usize,
+}
+
+impl Gate {
+    pub fn new(
+        gate_name: String, 
+        gate_type: GateType,
+        input_wires: Vec<String>,
+        output_wire: String,
+        level: usize
+    ) -> Self {
+        Gate {
+            gate_name,
+            gate_type,
+            input_wires,
+            output_wire,
+            level,
+            output: None,
+        }
+    }
+    
+    pub fn get_output_wire(&self) -> String {
+        self.output_wire.clone()
+    }
+
+    fn evaluate(&mut self, input_map: &HashMap<String, bool>) -> bool {
+        if let Some(output) = self.output {
+            return output;
+        }
+        let input_values: Vec<bool> = self.input_wires
+            .iter().map(|input| input_map[input]).collect();
+        let output = match self.gate_type {
+            GateType::And => input_values.iter().all(|&v| v),
+            GateType::Or => input_values.iter().any(|&v| v),
+            GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
+        };
+
+        self.output = Some(output);
+        output
+    }
+}
+
+// Evaluate each gate in topological order
+pub fn evaluate_circuit(
+    gates: Vec<Gate>, output_map: &mut HashMap<String, (bool, usize)>
+) -> HashMap::<usize, Vec<String>> {
+    let mut level_map = HashMap::<usize, Vec<String>>::new();
+    for mut gate in gates {
+        println!("evaluating gate: {:?}", gate);
+
+        let mut depth = 0;
+        let input_map: HashMap<String, bool> = gate.input_wires
+            .iter()
+            .map(|input| {
+                let (input_value, input_depth) = match output_map.get(input) {
+                    Some(value) => *value,
+                    None => panic!("Input {} not found in output map", input),
+                };
+                depth = std::cmp::max(depth, input_depth + 1);
+                (input.clone(), input_value)
+            })
+            .collect();
+
+        match level_map.entry(depth) {
+            Entry::Vacant(e) => { e.insert(vec![gate.gate_name.clone()]); },
+            Entry::Occupied(mut e) => { e.get_mut().push(gate.gate_name.clone()); }
+        }
+
+        gate.level = depth;
+        let output_value = gate.evaluate(&input_map);
+        output_map.insert(gate.output_wire, (output_value, depth));
+    }
+
+    level_map
+}

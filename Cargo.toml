@@ -1,5 +1,5 @@
 [package]
-name = "he-rs-test"
+name = "helm"
 description = "HELM: Homomorphic Evaluation with Lookup table Memoization"
 version = "0.1.0"
 edition = "2021"
