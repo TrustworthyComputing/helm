@@ -6,8 +6,8 @@ mod circuit;
 mod verilog_parser;
 
 fn main() {
-    let (mut gates, mut output_map, inputs) = 
-        verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+    let (mut gates, mut wire_map, inputs) = 
+        verilog_parser::read_verilog_file("verilog-files/4bit_adder.v");
     debug_println!("inputs: {:?}", inputs);
 
     // Initialization of inputs to true
@@ -28,12 +28,14 @@ fn main() {
 
     // Initialization of inputs to true
     for input in &inputs {
-        output_map.insert(input.to_string(), true);
+        wire_map.insert(input.to_string(), true);
     }
-    // circuit::_evaluate_circuit_sequentially(&mut gates, &mut output_map);
-    circuit::evaluate_circuit_parallel(&mut level_map, &mut output_map);
+    debug_println!("before eval wire_map: {:?}", wire_map);
+
+    // circuit::_evaluate_circuit_sequentially(&mut gates, &mut wire_map);
+    wire_map = circuit::evaluate_circuit_parallel(&mut level_map, &wire_map);
     println!("Evaluated:");
-    for wire_name in output_map.keys().sorted() {
-        println!(" {}: {}", wire_name, output_map[wire_name]);
+    for wire_name in wire_map.keys().sorted() {
+        println!(" {}: {}", wire_name, wire_map[wire_name]);
     }
 }

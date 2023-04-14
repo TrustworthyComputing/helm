@@ -47,7 +47,7 @@ pub fn read_verilog_file(
     let reader = BufReader::new(file);
 
     let mut gates = Vec::new();
-    let mut output_map = HashMap::new();
+    let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
     let mut _outputs = Vec::new();
     let mut _wires = Vec::new();
@@ -86,11 +86,11 @@ pub fn read_verilog_file(
             },
             _ => {
                 let gate = parse_gate(&tokens);
-                output_map.insert(gate.get_output_wire(), false);
+                wire_map.insert(gate.get_output_wire(), false);
                 gates.push(gate);
             },
         }
     }
 
-    (gates, output_map, inputs)
+    (gates, wire_map, inputs)
 }

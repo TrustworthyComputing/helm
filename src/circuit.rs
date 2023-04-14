@@ -1,9 +1,12 @@
-use itertools::Itertools;
-use std::collections::{HashMap, hash_map::Entry};
 use debug_print::debug_println;
-use std::vec;
-use std::sync::{Arc, Mutex};
+use itertools::Itertools;
 use rayon::prelude::*;
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::atomic::{AtomicBool, Ordering},
+    // thread,
+    vec,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum GateType {
@@ -91,7 +94,7 @@ pub fn compute_levels(
 // Evaluate each gate in topological order
 pub fn _evaluate_circuit_sequentially(
     gates: &mut Vec<Gate>,
-    output_map: &mut HashMap<String, bool>
+    wire_map: &mut HashMap<String, bool>
 ) {
     for gate in gates {
         debug_println!("evaluating gate: {:?}", gate);
@@ -99,7 +102,7 @@ pub fn _evaluate_circuit_sequentially(
         let input_map: HashMap<String, bool> = gate.input_wires
             .iter()
             .map(|input| {
-                let input_value = match output_map.get(input) {
+                let input_value = match wire_map.get(input) {
                     Some(value) => *value,
                     None => panic!("Input {} not found in output map", input),
                 };
@@ -108,35 +111,58 @@ pub fn _evaluate_circuit_sequentially(
             .collect();
 
         let output_value = gate.evaluate(&input_map);
-        output_map.insert(gate.get_output_wire(), output_value);
+        wire_map.insert(gate.get_output_wire(), output_value);
     }
 }
 
 // Evaluate each gate in topological order
 pub fn evaluate_circuit_parallel(
     level_map: &mut HashMap<usize, Vec<Gate>>,
-    output_map: &mut HashMap<String, bool>,
-) {
-    let output_map = Arc::new(Mutex::new(output_map));
-    for (_, gates) in level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+    wire_map: &HashMap<String, bool>,
+) -> HashMap<String, bool> {
+    let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
+        .iter()
+        .enumerate()
+        .map(|(i, (key, &value))| {
+            ((key, i), AtomicBool::new(value))
+        })
+        .unzip();
+
+    // For each level
+    for (_level, gates) in level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+        // debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
+
+        // Evaluate all the gates in the level in parallel
         gates.par_iter_mut().for_each(|gate| {
-            debug_println!("evaluating gate: {:?}", gate);
             let input_map: HashMap<String, bool> = gate.input_wires
                 .iter()
                 .map(|input| {
-                    let input_value = match output_map.lock().unwrap().get(input) {
-                        Some(value) => *value,
-                        None => panic!("Input {} not found in output map", input),
+                    // Get the corresponding index in the VALUES array
+                    let index = match key_to_index.get(input) {
+                        Some(&index) => index,
+                        None => panic!("Input wire {} not found in key_to_index map", input),
                     };
-                    (input.clone(), input_value)
+                    // Read the value of the corresponding key
+                    let value = eval_values[index].load(Ordering::Relaxed);
+
+                    (input.clone(), value)
                 })
                 .collect();
-
             let output_value = gate.evaluate(&input_map);
-            output_map.lock().unwrap().insert(
-                gate.get_output_wire().to_owned(), output_value
-            );
-        });
-    }
-}
+            // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
 
+            // Get the corresponding index in the VALUES array
+            let output_index = key_to_index[&gate.get_output_wire()];
+
+            // Update the value of the corresponding key
+            eval_values[output_index].store(output_value, Ordering::Relaxed);
+        });
+    };
+
+    key_to_index
+        .iter()
+        .map(|(&key, &index)| {
+            (key.to_string(), eval_values[index].load(Ordering::Relaxed))
+        })
+        .collect::<HashMap<String, bool>>()
+}
