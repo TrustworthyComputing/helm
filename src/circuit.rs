@@ -1,16 +1,18 @@
+use itertools::Itertools;
 use std::collections::{HashMap, hash_map::Entry};
+use debug_print::debug_println;
 use std::vec;
 
-// use rayon::prelude::*;
+use rayon::prelude::*;
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum GateType {
     And,
     Or,
     Xor,
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Gate {
     gate_name: String,
     gate_type: GateType,
@@ -59,36 +61,81 @@ impl Gate {
     }
 }
 
+// Sort the gates by level so they can be evaluated later in parallel.
+pub fn compute_levels(
+    gates: &mut Vec<Gate>, wire_levels: &mut HashMap<String, usize>
+) -> HashMap::<usize, Vec<Gate>> {
+    let mut level_map = HashMap::new();
+    for mut gate in gates {
+        // Find the max depth of the input wires
+        let mut depth = 0;
+        gate.input_wires.iter().for_each(|input| {
+            let input_depth = match wire_levels.get(input) {
+                Some(value) => *value,
+                None => panic!("Input {} not found in output map", input),
+            };
+            depth = std::cmp::max(depth, input_depth + 1);
+        });
+
+        match level_map.entry(depth) {
+            Entry::Vacant(e) => { e.insert(vec![(*gate).clone()]); },
+            Entry::Occupied(mut e) => { e.get_mut().push((*gate).clone()); }
+        }
+        gate.level = depth;
+        wire_levels.insert(gate.get_output_wire(), depth);
+    }
+
+    level_map
+}
+
 // Evaluate each gate in topological order
 pub fn evaluate_circuit(
-    gates: Vec<Gate>, output_map: &mut HashMap<String, (bool, usize)>
-) -> HashMap::<usize, Vec<String>> {
-    let mut level_map = HashMap::<usize, Vec<String>>::new();
-    for mut gate in gates {
-        println!("evaluating gate: {:?}", gate);
+    gates: &mut Vec<Gate>,
+    output_map: &mut HashMap<String, bool>
+) {
+    for gate in gates {
+        debug_println!("evaluating gate: {:?}", gate);
 
-        let mut depth = 0;
         let input_map: HashMap<String, bool> = gate.input_wires
             .iter()
             .map(|input| {
-                let (input_value, input_depth) = match output_map.get(input) {
+                let input_value = match output_map.get(input) {
                     Some(value) => *value,
                     None => panic!("Input {} not found in output map", input),
                 };
-                depth = std::cmp::max(depth, input_depth + 1);
                 (input.clone(), input_value)
             })
             .collect();
 
-        match level_map.entry(depth) {
-            Entry::Vacant(e) => { e.insert(vec![gate.gate_name.clone()]); },
-            Entry::Occupied(mut e) => { e.get_mut().push(gate.gate_name.clone()); }
+        let output_value = gate.evaluate(&input_map);
+        output_map.insert(gate.get_output_wire(), output_value);
+    }
+}
+
+// Evaluate each gate in topological order
+pub fn evaluate_circuit_parallel(
+    level_map: &mut HashMap::<usize, Vec<Gate>>,
+    output_map: &mut HashMap<String, bool>,
+) {
+    for (_, gates) in level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+        
+        for gate in gates.iter_mut() {
+            debug_println!("evaluating gate: {:?}", gate);
+
+            let input_map: HashMap<String, bool> = gate.input_wires
+                .iter()
+                .map(|input| {
+                    let input_value = match output_map.get(input) {
+                        Some(value) => *value,
+                        None => panic!("Input {} not found in output map", input),
+                    };
+                    (input.clone(), input_value)
+                })
+                .collect();
+
+            let output_value = gate.evaluate(&input_map);
+            output_map.insert(gate.get_output_wire(), output_value);
         }
 
-        gate.level = depth;
-        let output_value = gate.evaluate(&input_map);
-        output_map.insert(gate.output_wire, (output_value, depth));
     }
-
-    level_map
 }

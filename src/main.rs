@@ -1,30 +1,40 @@
+use debug_print::debug_println;
+use itertools::Itertools;
+use std::collections::HashMap;
+
 mod circuit;
 mod verilog_parser;
 
 fn main() {
-    let (gates, mut output_map, inputs, outputs, wires) = verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+    let (mut gates, mut output_map, inputs) = 
+        verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+    debug_println!("inputs: {:?}", inputs);
 
-    println!();
-    println!("inputs: {:?}", inputs);
-    println!("outputs: {:?}", outputs);
-    println!("wires: {:?}", wires);
-    println!("output_map");
-    for out in &output_map {
-        println!(" {:?}", out);
+    // Initialization of inputs to true
+    let mut wire_levels = HashMap::new();
+    for input in &inputs {
+        wire_levels.insert(input.to_string(), 0);
+    }
+
+    let mut level_map = circuit::compute_levels(&mut gates, &mut wire_levels);
+    
+    for level in level_map.keys().sorted() {
+        println!("Level {}:", level);
+        for gate in &level_map[level] {
+            println!("  {:?}", gate);
+        }
     }
     println!();
-    
+
     // Initialization of inputs to true
     for input in &inputs {
-        output_map.insert(input.to_string(), (true, 0));
+        output_map.insert(input.to_string(), true);
     }
+    // circuit::evaluate_circuit(&mut gates, &mut output_map);
 
-    let level_map = circuit::evaluate_circuit(gates, &mut output_map);
-    for level in &level_map {
-        println!(" {:?}", level);
-    }
-
-    for (wire_name, output) in output_map {
-        println!("Wire: {}: {}", wire_name, output.0);
+    circuit::evaluate_circuit_parallel(&mut level_map, &mut output_map);
+    println!("Evaluated:");
+    for wire_name in output_map.keys().sorted() {
+        println!(" {}: {}", wire_name, output_map[wire_name]);
     }
 }

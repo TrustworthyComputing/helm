@@ -8,6 +8,8 @@ keywords = ["cryptography", "homomorphic-encryption", "HE", "FHE"]
 license = "MIT"
 
 [dependencies]
+debug_print = "1.0.0"
+itertools = "0.10.5"
 rayon = "1.7.0"
 tfhe = { version = "*", features = ["boolean", "shortint", "x86_64-unix"] }
 

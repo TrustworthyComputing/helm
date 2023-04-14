@@ -42,15 +42,15 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
 
 pub fn read_verilog_file(
     file_name: &str
-) -> (Vec<Gate>, HashMap<String, (bool, usize)>, Vec<String>, Vec<String>, Vec<String>) {
+) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
     let mut gates = Vec::new();
     let mut output_map = HashMap::new();
     let mut inputs = Vec::new();
-    let mut outputs = Vec::new();
-    let mut wires = Vec::new();
+    let mut _outputs = Vec::new();
+    let mut _wires = Vec::new();
     for line in reader.lines() {
         let line = line.expect("Failed to read line").trim().to_owned();
 
@@ -72,25 +72,25 @@ pub fn read_verilog_file(
             "output" => {
                 if let Some((start, end)) = parse_range(tokens[1]) {
                     let output_name = tokens[2].trim_matches(',').trim_end_matches(';');
-                    outputs.extend((start..end+1).map(|i| format!("{}[{}]", output_name, i)));
+                    _outputs.extend((start..end+1).map(|i| format!("{}[{}]", output_name, i)));
                 } else {
-                    outputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
+                    _outputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
                 }
             },
             "wire" => {
                 for i in 1..tokens.len() {
-                    wires.push(String::from(
+                    _wires.push(String::from(
                         tokens[i].trim_matches(',').trim_end_matches(';')
                     ));
                 }
             },
             _ => {
                 let gate = parse_gate(&tokens);
-                output_map.insert(gate.get_output_wire(), (false, 0));
+                output_map.insert(gate.get_output_wire(), false);
                 gates.push(gate);
             },
         }
     }
 
-    (gates, output_map, inputs, outputs, wires)
+    (gates, output_map, inputs)
 }
