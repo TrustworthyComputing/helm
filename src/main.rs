@@ -30,8 +30,7 @@ fn main() {
     for input in &inputs {
         output_map.insert(input.to_string(), true);
     }
-    // circuit::evaluate_circuit(&mut gates, &mut output_map);
-
+    // circuit::_evaluate_circuit_sequentially(&mut gates, &mut output_map);
     circuit::evaluate_circuit_parallel(&mut level_map, &mut output_map);
     println!("Evaluated:");
     for wire_name in output_map.keys().sorted() {

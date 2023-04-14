@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::collections::{HashMap, hash_map::Entry};
 use debug_print::debug_println;
 use std::vec;
-
+use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -89,7 +89,7 @@ pub fn compute_levels(
 }
 
 // Evaluate each gate in topological order
-pub fn evaluate_circuit(
+pub fn _evaluate_circuit_sequentially(
     gates: &mut Vec<Gate>,
     output_map: &mut HashMap<String, bool>
 ) {
@@ -114,18 +114,17 @@ pub fn evaluate_circuit(
 
 // Evaluate each gate in topological order
 pub fn evaluate_circuit_parallel(
-    level_map: &mut HashMap::<usize, Vec<Gate>>,
+    level_map: &mut HashMap<usize, Vec<Gate>>,
     output_map: &mut HashMap<String, bool>,
 ) {
+    let output_map = Arc::new(Mutex::new(output_map));
     for (_, gates) in level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
-        
-        for gate in gates.iter_mut() {
+        gates.par_iter_mut().for_each(|gate| {
             debug_println!("evaluating gate: {:?}", gate);
-
             let input_map: HashMap<String, bool> = gate.input_wires
                 .iter()
                 .map(|input| {
-                    let input_value = match output_map.get(input) {
+                    let input_value = match output_map.lock().unwrap().get(input) {
                         Some(value) => *value,
                         None => panic!("Input {} not found in output map", input),
                     };
@@ -134,8 +133,10 @@ pub fn evaluate_circuit_parallel(
                 .collect();
 
             let output_value = gate.evaluate(&input_map);
-            output_map.insert(gate.get_output_wire(), output_value);
-        }
-
+            output_map.lock().unwrap().insert(
+                gate.get_output_wire().to_owned(), output_value
+            );
+        });
     }
 }
+
