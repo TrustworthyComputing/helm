@@ -8,6 +8,7 @@ keywords = ["cryptography", "homomorphic-encryption", "HE", "FHE"]
 license = "MIT"
 
 [dependencies]
+clap = "4.2.2"
 debug_print = "1.0.0"
 itertools = "0.10.5"
 rayon = "1.7.0"

@@ -1,3 +1,4 @@
+use clap::{Arg, Command};
 use debug_print::debug_println;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -6,8 +7,18 @@ mod circuit;
 mod verilog_parser;
 
 fn main() {
+    let matches = Command::new("HELM")
+        .about("HELM: Homomorphic Evaluation with Lookup table Memoization")
+        .arg(Arg::new("input")
+            .long("input")
+            .value_name("FILE")
+            .help("Sets the input file to use")
+            .required(true))
+        .get_matches();
+    let file_name = matches.get_one::<String>("input").expect("required");
+
     let (mut gates, mut wire_map, inputs) = 
-        verilog_parser::read_verilog_file("verilog-files/4bit_adder.v");
+        verilog_parser::read_verilog_file(file_name);
     debug_println!("inputs: {:?}", inputs);
 
     // Initialization of inputs to true

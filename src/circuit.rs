@@ -12,6 +12,9 @@ use std::{
 pub enum GateType {
     And,
     Or,
+    Mux,
+    Nand,
+    Not,
     Xor,
 }
 
@@ -57,6 +60,12 @@ impl Gate {
             GateType::And => input_values.iter().all(|&v| v),
             GateType::Or => input_values.iter().any(|&v| v),
             GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
+            GateType::Not => !input_values[0],
+            GateType::Nand => !input_values.iter().all(|&v| v),
+            GateType::Mux => {
+                let select_bit = input_values[2];
+                (select_bit && input_values[0]) || (!select_bit && input_values[1])
+            },
         };
 
         self.output = Some(output);

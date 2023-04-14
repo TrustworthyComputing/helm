@@ -9,6 +9,9 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "and" => GateType::And,
         "or" => GateType::Or,
         "xor" => GateType::Xor,
+        "mux" => GateType::Mux,
+        "nand" => GateType::Nand,
+        "not" => GateType::Not,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -17,12 +20,35 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         .filter(|s| !s.trim().is_empty())
         .collect::<Vec<&str>>();
     let gate_name = String::from(name_and_inputs[0]);
-    let mut input_wires: Vec<String> = name_and_inputs[1..]
-        .iter()
-        .map(|s| String::from(*s))
-        .collect();
-    input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
-    let output_wire = String::from(tokens[3].trim_end_matches(';').trim_end_matches(')'));
+
+    let (input_wires, output_wire) = match gate_type {
+        GateType::Not => {
+            (
+                vec![String::from(name_and_inputs[1].trim())], 
+                String::from(tokens[2].trim_end_matches(';').trim_end_matches(')'))
+            )
+        },
+        GateType::Mux => {
+            let mut input_wires: Vec<String> = name_and_inputs[1..]
+                .iter()
+                .map(|s| String::from(*s))
+                .collect();
+            input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
+            input_wires.push(tokens[3].trim_end_matches(',').trim().to_owned()); // select bit
+            let output_wire = String::from(tokens[4].trim_end_matches(';').trim_end_matches(')'));
+
+            (input_wires, output_wire)
+        },
+        _ => {
+            let mut input_wires: Vec<String> = name_and_inputs[1..]
+                .iter()
+                .map(|s| String::from(*s))
+                .collect();
+            input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
+            let output_wire = String::from(tokens[3].trim_end_matches(';').trim_end_matches(')'));
+            (input_wires, output_wire)
+        }
+    };
     Gate::new(gate_name, gate_type, input_wires, output_wire, 0)
 }
 
@@ -84,7 +110,7 @@ pub fn read_verilog_file(
                     ));
                 }
             },
-            _ => {
+            _ => { // Gate
                 let gate = parse_gate(&tokens);
                 wire_map.insert(gate.get_output_wire(), false);
                 gates.push(gate);

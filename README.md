@@ -3,7 +3,9 @@
 ## Overview
 TODO: write an overview here ...
 
-
+```shell
+cargo run --bin main --release -- --input ./verilog-files/2bit_adder.v
+```
 
 <p align="center">
     <img src="./logos/twc.png" height="20%" width="20%">
