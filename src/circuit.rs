@@ -50,12 +50,10 @@ impl Gate {
         self.output_wire.clone()
     }
 
-    fn evaluate(&mut self, input_map: &HashMap<String, bool>) -> bool {
+    fn evaluate(&mut self, input_values: &Vec<bool>) -> bool {
         if let Some(output) = self.output {
             return output;
         }
-        let input_values: Vec<bool> = self.input_wires
-            .iter().map(|input| input_map[input]).collect();
         let output = match self.gate_type {
             GateType::And => input_values.iter().all(|&v| v),
             GateType::Or => input_values.iter().any(|&v| v),
@@ -108,18 +106,17 @@ pub fn _evaluate_circuit_sequentially(
     for gate in gates {
         debug_println!("evaluating gate: {:?}", gate);
 
-        let input_map: HashMap<String, bool> = gate.input_wires
+        let input_values = gate.input_wires
             .iter()
             .map(|input| {
-                let input_value = match wire_map.get(input) {
-                    Some(value) => *value,
+                match wire_map.get(input) {
+                    Some(input_value) => *input_value,
                     None => panic!("Input {} not found in output map", input),
-                };
-                (input.clone(), input_value)
+                }
             })
             .collect();
 
-        let output_value = gate.evaluate(&input_map);
+        let output_value = gate.evaluate(&input_values);
         wire_map.insert(gate.get_output_wire(), output_value);
     }
 }
@@ -143,24 +140,22 @@ pub fn evaluate_circuit_parallel(
 
         // Evaluate all the gates in the level in parallel
         gates.par_iter_mut().for_each(|gate| {
-            let input_map: HashMap<String, bool> = gate.input_wires
+            let input_map: Vec<bool> = gate.input_wires
                 .iter()
                 .map(|input| {
-                    // Get the corresponding index in the VALUES array
+                    // Get the corresponding index in the wires array
                     let index = match key_to_index.get(input) {
                         Some(&index) => index,
                         None => panic!("Input wire {} not found in key_to_index map", input),
                     };
                     // Read the value of the corresponding key
-                    let value = eval_values[index].load(Ordering::Relaxed);
-
-                    (input.clone(), value)
+                    eval_values[index].load(Ordering::Relaxed)
                 })
                 .collect();
             let output_value = gate.evaluate(&input_map);
             // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
 
-            // Get the corresponding index in the VALUES array
+            // Get the corresponding index in the wires array
             let output_index = key_to_index[&gate.get_output_wire()];
 
             // Update the value of the corresponding key
