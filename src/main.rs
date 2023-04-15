@@ -7,10 +7,13 @@ use std::{
 };
 use tfhe::boolean::prelude::*;
 
+mod ascii;
 mod circuit;
 mod verilog_parser;
 
 fn main() {
+    ascii::print_art();
+
     let matches = Command::new("HELM")
         .about("HELM: Homomorphic Evaluation with Lookup table Memoization")
         .arg(Arg::new("input")
