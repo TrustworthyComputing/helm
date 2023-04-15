@@ -49,6 +49,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
             (input_wires, output_wire)
         }
     };
+
     Gate::new(gate_name, gate_type, input_wires, output_wire, 0)
 }
 
