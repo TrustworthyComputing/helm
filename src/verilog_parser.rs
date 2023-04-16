@@ -121,3 +121,13 @@ pub fn read_verilog_file(
 
     (gates, wire_map, inputs)
 }
+
+#[test]
+fn test_parser() {
+    let (gates, wire_map, inputs) = 
+        read_verilog_file("verilog-files/2bit_adder.v");
+
+    assert_eq!(gates.len(), 10);
+    assert_eq!(wire_map.len(), 10);
+    assert_eq!(inputs.len(), 5);
+}

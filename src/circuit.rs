@@ -104,8 +104,14 @@ impl Gate {
 
 // Sort the gates by level so they can be evaluated later in parallel.
 pub fn compute_levels(
-    gates: &mut Vec<Gate>, wire_levels: &mut HashMap<String, usize>
+    gates: &mut Vec<Gate>, inputs: &Vec<String>
 ) -> HashMap::<usize, Vec<Gate>> {
+    // Initialization of inputs to true
+    let mut wire_levels = HashMap::new();
+    for input in inputs {
+        wire_levels.insert(input.to_string(), 0);
+    }
+    
     let mut level_map = HashMap::new();
     for mut gate in gates {
         // Find the max depth of the input wires
@@ -165,7 +171,7 @@ pub fn evaluate_circuit_parallel(
 
     // For each level
     for (_level, gates) in level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
-        debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
+        // debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
 
         // Evaluate all the gates in the level in parallel
         gates.par_iter_mut().for_each(|gate| {
@@ -252,4 +258,63 @@ pub fn evaluate_encrypted_circuit_parallel(
             (key.to_string(), eval_values[index].read().unwrap().clone())
         })
         .collect()
+}
+
+#[test]
+fn test_evaluate_circuit_parallel() {
+    let (mut gates, mut wire_map, inputs) = 
+        crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+
+    let mut level_map = compute_levels(&mut gates, &inputs);
+    for input_wire in &inputs {
+        wire_map.insert(input_wire.to_string(), true);
+    }
+    wire_map = evaluate_circuit_parallel(&mut level_map, &wire_map);
+
+    assert_eq!(gates.len(), 10);
+    assert_eq!(wire_map.len(), 15);
+    assert_eq!(inputs.len(), 5);
+
+    assert_eq!(wire_map["sum[0]"], true);
+    assert_eq!(wire_map["sum[1]"], true);
+    assert_eq!(wire_map["cout"], true);
+    assert_eq!(wire_map["i0"], false);
+    assert_eq!(wire_map["i1"], false);
+}
+
+#[test]
+fn test_evaluate_encrypted_circuit_parallel() {
+    let (mut gates, wire_map_im, inputs) = 
+        crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+    let mut ptxt_wire_map = wire_map_im.clone();
+
+    let mut level_map = compute_levels(&mut gates, &inputs);
+    
+    // Plaintext
+    for input_wire in &inputs {
+        ptxt_wire_map.insert(input_wire.to_string(), true);
+    }
+    ptxt_wire_map = evaluate_circuit_parallel(&mut level_map, &ptxt_wire_map);
+
+    // Encrypted
+    let (client_key, server_key) = gen_keys();
+
+    let mut enc_wire_map = HashMap::new();
+    for (wire, value) in wire_map_im {
+        enc_wire_map.insert(wire, client_key.encrypt(value));
+    }
+    for input_wire in &inputs {
+        enc_wire_map.insert(input_wire.to_string(), client_key.encrypt(true));
+    }
+    
+    enc_wire_map = evaluate_encrypted_circuit_parallel(&server_key, &mut level_map, &enc_wire_map);
+    let mut dec_wire_map = HashMap::new();
+    for wire_name in enc_wire_map.keys().sorted() {
+        dec_wire_map.insert(wire_name.to_string(), client_key.decrypt(&enc_wire_map[wire_name]));
+    }
+
+    // Check that encrypted and plaintext evaluations are equal
+    for key in ptxt_wire_map.keys() {
+        assert_eq!(ptxt_wire_map[key], dec_wire_map[key]);
+    }
 }

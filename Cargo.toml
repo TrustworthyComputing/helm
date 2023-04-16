@@ -22,11 +22,3 @@ path = "src/main.rs"
 [[bin]]
 name = "generate_adder"
 path = "src/generate_adder.rs"
-
-[[bin]]
-name = "boolean"
-path = "src/boolean.rs"
-
-[[bin]]
-name = "shortint"
-path = "src/shortint.rs"

@@ -1,5 +1,9 @@
 use clap::{Arg, Command};
 use debug_print::debug_println;
+use helm::{
+    circuit,
+    verilog_parser,
+};
 use itertools::Itertools;
 use std::{
     collections::HashMap,
@@ -8,8 +12,6 @@ use std::{
 use tfhe::boolean::prelude::*;
 
 mod ascii;
-mod circuit;
-mod verilog_parser;
 
 fn main() {
     ascii::print_art();
@@ -28,21 +30,16 @@ fn main() {
         verilog_parser::read_verilog_file(file_name);
     debug_println!("inputs: {:?}", inputs);
 
-    // Initialization of inputs to true
-    let mut wire_levels = HashMap::new();
-    for input in &inputs {
-        wire_levels.insert(input.to_string(), 0);
-    }
+    let mut level_map = circuit::compute_levels(&mut gates, &inputs);
 
-    let mut level_map = circuit::compute_levels(&mut gates, &mut wire_levels);
-    
+    #[cfg(debug_assertions)]
     for level in level_map.keys().sorted() {
         println!("Level {}:", level);
         for gate in &level_map[level] {
             println!("  {:?}", gate);
         }
     }
-    println!();
+    debug_println!();
 
     // Initialization of inputs to true
     let mut wire_map = wire_map_im.clone();
