@@ -1,9 +1,14 @@
 <h1 align="center">HELM <a href="https://github.com/jimouris/helm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
 
+<h2 align="center">HELM: Homomorphic Evaluation with Lookup table Memoization</h2>
+
+
 ## Overview
 TODO: write an overview here ...
 
 ```shell
+cargo build --release
+cargo test --release
 cargo run --bin main --release -- --input ./verilog-files/2bit_adder.v
 ```
 

@@ -9,7 +9,10 @@ use std::{
 };
 use tfhe::boolean::prelude::*;
 
-#[derive(Clone, Debug)]
+#[cfg(test)]
+use rand::Rng;
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
     And,
     Or,
@@ -258,6 +261,80 @@ pub fn evaluate_encrypted_circuit_parallel(
             (key.to_string(), eval_values[index].read().unwrap().clone())
         })
         .collect()
+}
+
+#[test]
+fn test_gate_evaluation() {
+    let (client_key, server_key) = gen_keys();
+
+    let ptxts = vec![true, false];
+    let ctxts = vec![client_key.encrypt(true), client_key.encrypt(false)];
+    let gates = vec![
+        Gate::new(
+            String::from(""), 
+            GateType::And, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Or, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Xor, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Nand, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Not, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Mux, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+    ];
+    let mut rng = rand::thread_rng();
+    for mut gate in gates {
+        for i in 0..2 {
+            for j in 0..2 {
+                let mut inputs_ptxt = vec![ptxts[i], ptxts[i]];
+                let mut inputs_ctxt = vec![ctxts[i].clone(), ctxts[j].clone()];
+                if gate.gate_type == GateType::Mux {
+                    let select: bool = rng.gen();
+                    inputs_ptxt.push(select);
+                    inputs_ctxt.push(client_key.encrypt(select));
+                }
+                let output_value_ptxt = gate.evaluate(&inputs_ptxt);
+
+                let output_value_enc = gate.evaluate_encrypted(
+                    &server_key, &inputs_ctxt
+                );
+
+                assert_eq!(output_value_ptxt, client_key.decrypt(&output_value_enc));
+            }
+        }
+    }
+
 }
 
 #[test]
