@@ -15,10 +15,13 @@ use rand::Rng;
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
     And,
-    Or,
+    Dff,
     Mux,
     Nand,
+    Nor,
     Not,
+    Or,
+    Xnor,
     Xor,
 }
 
@@ -29,6 +32,7 @@ pub struct Gate {
     input_wires: Vec<String>,
     output_wire: String,
     level: usize,
+    cycle: usize,
     output: Option<bool>,
     encrypted_output: Option<Ciphertext>,
 }
@@ -47,6 +51,7 @@ impl Gate {
             input_wires,
             output_wire,
             level,
+            cycle: 0,
             output: None,
             encrypted_output: None,
         }
@@ -56,48 +61,64 @@ impl Gate {
         self.output_wire.clone()
     }
 
-    fn evaluate(&mut self, input_values: &Vec<bool>) -> bool {
-        if let Some(output) = self.output {
-            return output;
+    pub fn get_gate_type(&self) -> GateType {
+        self.gate_type.clone()
+    }
+
+    fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
+        if let Some(output) = self.output.clone() {
+            if self.cycle == cycle {
+                return output;
+            }
         }
         let output = match self.gate_type {
             GateType::And => input_values.iter().all(|&v| v),
-            GateType::Or => input_values.iter().any(|&v| v),
-            GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
-            GateType::Not => !input_values[0],
-            GateType::Nand => !input_values.iter().all(|&v| v),
+            GateType::Dff => input_values[0],
             GateType::Mux => {
                 let select_bit = input_values[2];
                 (select_bit && input_values[0]) || (!select_bit && input_values[1])
             },
+            GateType::Nand => !input_values.iter().all(|&v| v),
+            GateType::Nor => !input_values.iter().any(|&v| v),
+            GateType::Not => !input_values[0],
+            GateType::Or => input_values.iter().any(|&v| v),
+            GateType::Xnor => input_values.iter().filter(|&&v| v).count() % 2 != 1,
+            GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
         };
 
         self.output = Some(output);
+        self.cycle = cycle;
         output
     }
 
     fn evaluate_encrypted(
-        &mut self, 
+        &mut self,
         server_key: &ServerKey,
-        input_values: &Vec<Ciphertext>
+        input_values: &Vec<Ciphertext>,
+        cycle: usize,
     ) -> Ciphertext {
         if let Some(encrypted_output) = self.encrypted_output.clone() {
-            return encrypted_output;
+            if self.cycle == cycle {
+                return encrypted_output;
+            }
         }
         let encrypted_output = match self.gate_type {
             GateType::And => server_key.
                 and(&input_values[0], &input_values[1]),
-            GateType::Or => server_key.
-                or(&input_values[0], &input_values[1]),
-            GateType::Xor => server_key.
-                xor(&input_values[0], &input_values[1]),
-            GateType::Not => server_key.
-                not(&input_values[0]),
+            GateType::Dff => input_values[0].clone(),
+            GateType::Mux => server_key.mux(&input_values[2],
+                &input_values[0], &input_values[1]),
             GateType::Nand => server_key.
                 nand(&input_values[0], &input_values[1]),
-            GateType::Mux => server_key.
-                mux(&input_values[2], &input_values[0],
-                    &input_values[1]),
+            GateType::Nor => server_key.
+                nor(&input_values[0], &input_values[1]),
+            GateType::Not => server_key.not(&input_values[0]),
+            GateType::Or => server_key.
+                or(&input_values[0], &input_values[1]),
+            GateType::Xnor => server_key.
+                xnor(&input_values[0], &input_values[1]),
+            GateType::Xor => server_key.
+                xor(&input_values[0], &input_values[1]),
         };
 
         self.encrypted_output = Some(encrypted_output.clone());
@@ -117,12 +138,20 @@ pub fn compute_levels(
     
     let mut level_map = HashMap::new();
     for mut gate in gates {
+        if gate.gate_type == GateType::Dff {
+            match level_map.entry(std::usize::MAX) {
+                Entry::Vacant(e) => { e.insert(vec![(*gate).clone()]); },
+                Entry::Occupied(mut e) => { e.get_mut().push((*gate).clone()); }
+            }
+            gate.level = std::usize::MAX;
+            continue;
+        }
         // Find the max depth of the input wires
         let mut depth = 0;
         gate.input_wires.iter().for_each(|input| {
             let input_depth = match wire_levels.get(input) {
                 Some(value) => *value,
-                None => panic!("Input {} not found in output map", input),
+                None => panic!("Input {} not found in wire_map", input),
             };
             depth = std::cmp::max(depth, input_depth + 1);
         });
@@ -141,7 +170,8 @@ pub fn compute_levels(
 // Evaluate each gate in topological order
 pub fn _evaluate_circuit_sequentially(
     gates: &mut Vec<Gate>,
-    wire_map: &mut HashMap<String, bool>
+    wire_map: &mut HashMap<String, bool>,
+    cycle: usize,
 ) {
     for gate in gates {
         debug_println!("evaluating gate: {:?}", gate);
@@ -151,12 +181,12 @@ pub fn _evaluate_circuit_sequentially(
             .map(|input| {
                 match wire_map.get(input) {
                     Some(input_value) => *input_value,
-                    None => panic!("Input {} not found in output map", input),
+                    None => panic!("Input {} not found in wire_map", input),
                 }
             })
             .collect();
 
-        let output_value = gate.evaluate(&input_values);
+        let output_value = gate.evaluate(&input_values, cycle);
         wire_map.insert(gate.get_output_wire(), output_value);
     }
 }
@@ -165,6 +195,7 @@ pub fn _evaluate_circuit_sequentially(
 pub fn evaluate_circuit_parallel(
     level_map: &mut HashMap<usize, Vec<Gate>>,
     wire_map: &HashMap<String, bool>,
+    cycle: usize,
 ) -> HashMap<String, bool> {
     let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
         .iter()
@@ -190,7 +221,7 @@ pub fn evaluate_circuit_parallel(
                     eval_values[index].read().unwrap().clone()
                 })
                 .collect();
-            let output_value = gate.evaluate(&input_values);
+            let output_value = gate.evaluate(&input_values, cycle);
             // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
 
             // Get the corresponding index in the wires array
@@ -214,6 +245,7 @@ pub fn evaluate_encrypted_circuit_parallel(
     server_key: &ServerKey,
     level_map: &mut HashMap<usize, Vec<Gate>>,
     enc_wire_map: &HashMap<String, Ciphertext>,
+    cycle: usize,
 ) -> HashMap<String, Ciphertext> {
     let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
         .iter()
@@ -243,7 +275,7 @@ pub fn evaluate_encrypted_circuit_parallel(
                     eval_values[index].read().unwrap().clone()
                 })
                 .collect();
-            let output_value = gate.evaluate_encrypted(server_key, &input_values);
+            let output_value = gate.evaluate_encrypted(server_key, &input_values, cycle);
             // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
 
             // Get the corresponding index in the wires array
@@ -286,6 +318,13 @@ fn test_gate_evaluation() {
         ),
         Gate::new(
             String::from(""), 
+            GateType::Nor, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
             GateType::Xor, 
             vec![], 
             String::from(""), 
@@ -301,6 +340,13 @@ fn test_gate_evaluation() {
         Gate::new(
             String::from(""), 
             GateType::Not, 
+            vec![], 
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Xnor, 
             vec![], 
             String::from(""), 
             0
@@ -324,10 +370,10 @@ fn test_gate_evaluation() {
                     inputs_ptxt.push(select);
                     inputs_ctxt.push(client_key.encrypt(select));
                 }
-                let output_value_ptxt = gate.evaluate(&inputs_ptxt);
+                let output_value_ptxt = gate.evaluate(&inputs_ptxt, 1);
 
                 let output_value_enc = gate.evaluate_encrypted(
-                    &server_key, &inputs_ctxt
+                    &server_key, &inputs_ctxt, 1
                 );
 
                 assert_eq!(output_value_ptxt, client_key.decrypt(&output_value_enc));
@@ -339,14 +385,14 @@ fn test_gate_evaluation() {
 
 #[test]
 fn test_evaluate_circuit_parallel() {
-    let (mut gates, mut wire_map, inputs) = 
+    let (mut gates, mut wire_map, inputs, _, _) = 
         crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
 
     let mut level_map = compute_levels(&mut gates, &inputs);
     for input_wire in &inputs {
         wire_map.insert(input_wire.to_string(), true);
     }
-    wire_map = evaluate_circuit_parallel(&mut level_map, &wire_map);
+    wire_map = evaluate_circuit_parallel(&mut level_map, &wire_map, 1);
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 15);
@@ -361,7 +407,7 @@ fn test_evaluate_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
-    let (mut gates, wire_map_im, inputs) = 
+    let (mut gates, wire_map_im, inputs, _, _) = 
         crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
@@ -371,7 +417,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
     for input_wire in &inputs {
         ptxt_wire_map.insert(input_wire.to_string(), true);
     }
-    ptxt_wire_map = evaluate_circuit_parallel(&mut level_map, &ptxt_wire_map);
+    ptxt_wire_map = evaluate_circuit_parallel(&mut level_map, &ptxt_wire_map, 1);
 
     // Encrypted
     let (client_key, server_key) = gen_keys();
@@ -384,7 +430,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
         enc_wire_map.insert(input_wire.to_string(), client_key.encrypt(true));
     }
     
-    enc_wire_map = evaluate_encrypted_circuit_parallel(&server_key, &mut level_map, &enc_wire_map);
+    enc_wire_map = evaluate_encrypted_circuit_parallel(&server_key, &mut level_map, &enc_wire_map, 1);
     let mut dec_wire_map = HashMap::new();
     for wire_name in enc_wire_map.keys().sorted() {
         dec_wire_map.insert(wire_name.to_string(), client_key.decrypt(&enc_wire_map[wire_name]));

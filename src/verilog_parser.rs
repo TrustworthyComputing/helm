@@ -7,11 +7,14 @@ use crate::circuit::{Gate, GateType};
 fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_type = match tokens[0] {
         "and" => GateType::And,
-        "or" => GateType::Or,
-        "xor" => GateType::Xor,
+        "dff" => GateType::Dff,
         "mux" => GateType::Mux,
         "nand" => GateType::Nand,
+        "nor" => GateType::Nor,
         "not" => GateType::Not,
+        "or" => GateType::Or,
+        "xnor" => GateType::Xnor,
+        "xor" => GateType::Xor,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -22,7 +25,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_name = String::from(name_and_inputs[0]);
 
     let (input_wires, output_wire) = match gate_type {
-        GateType::Not => {
+        GateType::Not | GateType::Dff => {
             (
                 vec![String::from(name_and_inputs[1].trim())], 
                 String::from(tokens[2].trim_end_matches(';').trim_end_matches(')'))
@@ -64,20 +67,23 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
         let end = std::cmp::max(first, second);
         return Some((start, end));
     }
+
     None
 }
 
 pub fn read_verilog_file(
     file_name: &str
-) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>) {
+) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, bool) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
+    let mut is_sequential = false;
     let mut gates = Vec::new();
     let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
     let mut _outputs = Vec::new();
     let mut _wires = Vec::new();
+    let mut dff_outputs = Vec::new();
     for line in reader.lines() {
         let line = line.expect("Failed to read line").trim().to_owned();
 
@@ -86,7 +92,7 @@ pub fn read_verilog_file(
             continue;
         }
 
-        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let tokens: Vec<&str> = line.split([',', ' '].as_ref()).filter(|s| !s.is_empty()).collect();
         match tokens[0] {
             "input" => {
                 if let Some((start, end)) = parse_range(tokens[1]) {
@@ -113,18 +119,25 @@ pub fn read_verilog_file(
             },
             _ => { // Gate
                 let gate = parse_gate(&tokens);
+// TODO
+                if gate.get_gate_type() == GateType::Dff {
+                    is_sequential = true;
+    wire_map.insert(gate.get_output_wire(), false);
+    inputs.push(gate.get_output_wire());
+                    dff_outputs.push(gate.get_output_wire());
+                }
                 wire_map.insert(gate.get_output_wire(), false);
                 gates.push(gate);
             },
         }
     }
 
-    (gates, wire_map, inputs)
+    (gates, wire_map, inputs, dff_outputs, is_sequential)
 }
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs) = 
+    let (gates, wire_map, inputs,_,  _) = 
         read_verilog_file("verilog-files/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
