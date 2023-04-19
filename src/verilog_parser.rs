@@ -119,11 +119,10 @@ pub fn read_verilog_file(
             },
             _ => { // Gate
                 let gate = parse_gate(&tokens);
-// TODO
                 if gate.get_gate_type() == GateType::Dff {
                     is_sequential = true;
-    wire_map.insert(gate.get_output_wire(), false);
-    inputs.push(gate.get_output_wire());
+                    wire_map.insert(gate.get_output_wire(), false);
+                    inputs.push(gate.get_output_wire());
                     dff_outputs.push(gate.get_output_wire());
                 }
                 wire_map.insert(gate.get_output_wire(), false);

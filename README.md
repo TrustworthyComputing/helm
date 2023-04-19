@@ -9,7 +9,9 @@ TODO: write an overview here ...
 ```shell
 cargo build --release
 cargo test --release
-cargo run --bin main --release -- --input ./verilog-files/2bit_adder.v
+cargo run --bin preprocessor -- --input ./verilog-files/s27.v
+cargo run --bin helm --release -- --input ./verilog-files/s27.out.v
+cargo run --bin helm --release -- --input ./verilog-files/2bit_adder.v
 ```
 
 <p align="center">

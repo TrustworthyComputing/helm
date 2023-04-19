@@ -1,6 +1,7 @@
 use clap::{Arg, Command};
 use debug_print::debug_println;
 use helm::{
+    ascii,
     circuit,
     verilog_parser,
 };
@@ -10,8 +11,6 @@ use std::{
     time::Instant,
 };
 use tfhe::boolean::prelude::*;
-
-mod ascii;
 
 fn main() {
     ascii::print_art();

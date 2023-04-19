@@ -17,9 +17,13 @@ termion = "2.0.1"
 tfhe = { version = "0.2.0", features = ["boolean", "shortint", "integer", "x86_64-unix"] }
 
 [[bin]]
-name = "main"
-path = "src/main.rs"
+name = "helm"
+path = "src/bin/helm.rs"
+
+[[bin]]
+name = "preprocessor"
+path = "src/bin/preprocessor.rs"
 
 [[bin]]
 name = "generate_adder"
-path = "src/generate_adder.rs"
+path = "src/bin/generate_adder.rs"
