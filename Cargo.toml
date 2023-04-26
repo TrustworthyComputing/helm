@@ -27,3 +27,7 @@ path = "src/bin/preprocessor.rs"
 [[bin]]
 name = "generate_adder"
 path = "src/bin/generate_adder.rs"
+
+[[bin]]
+name = "test_lut"
+path = "src/test_lut.rs"
