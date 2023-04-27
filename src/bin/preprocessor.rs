@@ -83,6 +83,7 @@ fn convert_verilog(
     let mut multi_bit_inputs = Vec::new();
     let mut multi_bit_outputs = Vec::new();
     let mut gates = Vec::new();
+    let mut lut_id = 1;
     let supported_gates = vec![
         "AND", "DFF", "MUX", "NAND", "NOR", "NOT", "OR", "XOR", "XNOR"
     ];
@@ -133,7 +134,11 @@ fn convert_verilog(
             },
             "assign" => { 
                 if line.contains(">>") { // LUT
-                    let mut lut_line = "lut(".to_owned();
+                    let mut lut_line = "lut ".to_owned();
+                    lut_line += "lut_gate";
+                    lut_line += &lut_id.to_string();
+                    lut_line += "(";
+                    lut_id += 1;
                     if line.contains('h') {
                         lut_line += "0x";
                     }
@@ -261,12 +266,12 @@ fn test_preprocessor() {
     let out_file_name = String::from("verilog-files/s27.out.v");
 
     let wire_dict = build_assign_dict(&in_file_name);
-
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
-    let (gates, wire_map, inputs, dff_outputs,  _) = 
+    let (gates, wire_map, inputs, dff_outputs, is_sequential) = 
         verilog_parser::read_verilog_file("verilog-files/s27.out.v");
 
+    assert_eq!(is_sequential, true);
     assert_eq!(gates.len(), 14);
     assert_eq!(wire_map.len(), 14);
     assert_eq!(inputs.len() - dff_outputs.len(), 6); // these are the true inputs
@@ -275,12 +280,17 @@ fn test_preprocessor() {
     let out_file_name = String::from("verilog-files/8bit-adder-lut.out.v");
 
     let wire_dict = build_assign_dict(&in_file_name);
-
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
-    // let (gates, wire_map, inputs, dff_outputs,  _) = 
-    //     verilog_parser::read_verilog_file("verilog-files/s27.out.v");
+    let (gates, wire_map, inputs, dff_outputs, is_sequential) = 
+        verilog_parser::read_verilog_file("verilog-files/8bit-adder-lut.out.v");
 
+    assert_eq!(is_sequential, false);
+// TODO
+    println!("gates: {} {:?}", gates.len(), gates);
+    println!("wire_map: {} {:?}", wire_map.len(), wire_map);
+    println!("inputs: {} {:?}", inputs.len(), inputs);
+    println!("dff_outputs: {} {:?}", dff_outputs.len(), dff_outputs);
     // assert_eq!(gates.len(), 14);
     // assert_eq!(wire_map.len(), 14);
     // assert_eq!(inputs.len() - dff_outputs.len(), 6); // these are the true inputs

@@ -14,15 +14,16 @@ use rand::Rng;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
-    And,
-    Dff,
-    Mux,
-    Nand,
-    Nor,
-    Not,
-    Or,
-    Xnor,
-    Xor,
+    And,    // and  ID(in0, in1, out);
+    Dff,    // dff  ID(in, out);
+    Lut,    // lut  ID(const, in0, ... , inN-1, out);
+    Mux,    // mux  ID(in0, in1, sel, out);
+    Nand,   // nand ID(in0, in1, out);
+    Nor,    // nor  ID(in0, in1, out);
+    Not,    // not  ID(in, out);
+    Or,     // or   ID(in0, in1, out);
+    Xnor,   // xnor ID(in0, in1, out);
+    Xor,    // xor  ID(in0, in1, out);
 }
 
 #[derive(Clone, Debug)]
@@ -30,6 +31,7 @@ pub struct Gate {
     _gate_name: String,
     gate_type: GateType,
     input_wires: Vec<String>,
+    lut_const: Option<usize>,
     output_wire: String,
     level: usize,
     cycle: usize,
@@ -42,6 +44,7 @@ impl Gate {
         _gate_name: String, 
         gate_type: GateType,
         input_wires: Vec<String>,
+        lut_const: Option<usize>,
         output_wire: String,
         level: usize
     ) -> Self {
@@ -49,6 +52,7 @@ impl Gate {
             _gate_name,
             gate_type,
             input_wires,
+            lut_const,
             output_wire,
             level,
             cycle: 0,
@@ -74,6 +78,21 @@ impl Gate {
         let output = match self.gate_type {
             GateType::And => input_values.iter().all(|&v| v),
             GateType::Dff => input_values[0],
+            GateType::Lut => {
+                let mut shift_amt = 0;
+                let end = input_values.len() - 1;
+                // convert input bits to int:  [1, 1, 0, 1] => 13
+                for input_idx in 0..input_values.len() {
+                    if input_values[input_idx] {
+                        shift_amt += 1 << (end-input_idx);
+                    }
+                }
+                if let Some(lut_const) = self.lut_const {
+                    ((lut_const >> shift_amt) & 1) > 0
+                } else {
+                    panic!("Lut const not provided");
+                }
+            },
             GateType::Mux => {
                 let select_bit = input_values[2];
                 (select_bit && input_values[0]) || (!select_bit && input_values[1])
@@ -106,6 +125,12 @@ impl Gate {
             GateType::And => server_key.
                 and(&input_values[0], &input_values[1]),
             GateType::Dff => input_values[0].clone(),
+            GateType::Lut => {
+// TODO(@cgouert): fixme
+// Placeholder to compile
+                server_key.and(&input_values[0], &input_values[1])
+
+            },
             GateType::Mux => server_key.mux(&input_values[2],
                 &input_values[0], &input_values[1]),
             GateType::Nand => server_key.
@@ -305,21 +330,24 @@ fn test_gate_evaluation() {
         Gate::new(
             String::from(""), 
             GateType::And, 
-            vec![], 
+            vec![],
+            None,
             String::from(""), 
             0
         ),
         Gate::new(
             String::from(""), 
             GateType::Or, 
-            vec![], 
+            vec![],
+            None, 
             String::from(""), 
             0
         ),
         Gate::new(
             String::from(""), 
             GateType::Nor, 
-            vec![], 
+            vec![],
+            None,
             String::from(""), 
             0
         ),
@@ -327,6 +355,7 @@ fn test_gate_evaluation() {
             String::from(""), 
             GateType::Xor, 
             vec![], 
+            None,
             String::from(""), 
             0
         ),
@@ -334,13 +363,15 @@ fn test_gate_evaluation() {
             String::from(""), 
             GateType::Nand, 
             vec![], 
+            None,
             String::from(""), 
             0
         ),
         Gate::new(
             String::from(""), 
             GateType::Not, 
-            vec![], 
+            vec![],
+            None,
             String::from(""), 
             0
         ),
@@ -348,6 +379,7 @@ fn test_gate_evaluation() {
             String::from(""), 
             GateType::Xnor, 
             vec![], 
+            None,
             String::from(""), 
             0
         ),
@@ -355,6 +387,15 @@ fn test_gate_evaluation() {
             String::from(""), 
             GateType::Mux, 
             vec![], 
+            None,
+            String::from(""), 
+            0
+        ),
+        Gate::new(
+            String::from(""), 
+            GateType::Lut, 
+            vec![], 
+            None,
             String::from(""), 
             0
         ),

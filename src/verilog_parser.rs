@@ -7,6 +7,7 @@ use crate::circuit::{Gate, GateType};
 fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_type = match tokens[0] {
         "and" => GateType::And,
+        "lut" => GateType::Lut,
         "dff" => GateType::Dff,
         "mux" => GateType::Mux,
         "nand" => GateType::Nand,
@@ -24,36 +25,45 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         .collect::<Vec<&str>>();
     let gate_name = String::from(name_and_inputs[0]);
 
-    let (input_wires, output_wire) = match gate_type {
+    let (mut input_wires, output_wire) = match gate_type {
         GateType::Not | GateType::Dff => {
             (
                 vec![String::from(name_and_inputs[1].trim())], 
                 String::from(tokens[2].trim_end_matches(';').trim_end_matches(')'))
             )
         },
-        GateType::Mux => {
-            let mut input_wires: Vec<String> = name_and_inputs[1..]
-                .iter()
-                .map(|s| String::from(*s))
-                .collect();
-            input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
-            input_wires.push(tokens[3].trim_end_matches(',').trim().to_owned()); // select bit
-            let output_wire = String::from(tokens[4].trim_end_matches(';').trim_end_matches(')'));
-
+        GateType::Mux | GateType::Lut => {
+            let mut input_wires = vec![String::from(name_and_inputs[1])];
+            for i in 2..(tokens.len()-1) {
+                input_wires.push(tokens[i].trim_end_matches(',').trim().to_owned());
+            }
+            let output_wire = String::from(tokens[tokens.len()-1].trim_end_matches(';').trim_end_matches(')'));
             (input_wires, output_wire)
         },
         _ => {
-            let mut input_wires: Vec<String> = name_and_inputs[1..]
-                .iter()
-                .map(|s| String::from(*s))
-                .collect();
+            let mut input_wires = vec![String::from(name_and_inputs[1])];
             input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
             let output_wire = String::from(tokens[3].trim_end_matches(';').trim_end_matches(')'));
             (input_wires, output_wire)
         }
     };
 
-    Gate::new(gate_name, gate_type, input_wires, output_wire, 0)
+    let mut lut_const: Option<usize> = None;
+    if gate_type == GateType::Lut {
+        let lut_const_str = input_wires.remove(0);
+        if lut_const_str.starts_with("0x") {
+            lut_const = Some(match usize::from_str_radix(&lut_const_str.trim_start_matches("0x"), 16) {
+                Ok(n) => n,
+                Err(_) => panic!("Failed to parse hex"),
+            });
+        } else {
+            lut_const = Some(match lut_const_str.parse::<usize>() {
+                Ok(n) => n,
+                Err(_) => panic!("Failed to parse integer"),
+            });
+        }
+    }
+    Gate::new(gate_name, gate_type, input_wires, lut_const, output_wire, 0)
 }
 
 fn parse_range(range_str: &str) -> Option<(usize, usize)> {
