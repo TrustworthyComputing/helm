@@ -159,10 +159,25 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs,_,  _) = 
+    let (gates, wire_map, inputs, _, _) = 
         read_verilog_file("verilog-files/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
     assert_eq!(inputs.len(), 5);
 }
+
+#[test]
+fn test_input_wires_parser() {
+    let (_, _, inputs, _, _) = 
+        read_verilog_file("verilog-files/2bit_adder.v");
+
+    let input_wires_map = 
+        read_input_wires("verilog-files/2bit_adder.input.csv");
+
+    assert_eq!(input_wires_map.len(), inputs.len());
+    for input_wire in inputs {
+        assert!(input_wires_map.contains_key(&input_wire));
+    }
+}
+
