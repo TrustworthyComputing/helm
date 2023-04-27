@@ -9,6 +9,7 @@ license = "MIT"
 
 [dependencies]
 clap = "4.2.2"
+csv = "1.2.1"
 debug_print = "1.0.0"
 itertools = "0.10.5"
 rand = "0.8.5"

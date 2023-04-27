@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::HashMap;
+use csv::Reader;
 
 use crate::circuit::{Gate, GateType};
 
@@ -132,6 +133,28 @@ pub fn read_verilog_file(
     }
 
     (gates, wire_map, inputs, dff_outputs, is_sequential)
+}
+
+pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
+    let inputs_file = File::open(file_name).expect("Failed to open CSV file");
+    let reader = BufReader::new(inputs_file);
+
+    let mut input_map = HashMap::new();
+    for rec in Reader::from_reader(reader).records() {
+        let (input_wire, init_value): (String, bool) = {
+            let record = rec.unwrap();
+            assert_eq!(record.len(), 2);
+
+            (
+                record[0].trim().to_string(), 
+                record[1].trim().to_string().parse::<bool>().unwrap()
+            )
+        };
+        
+        input_map.insert(input_wire, init_value);
+    }
+
+    input_map
 }
 
 #[test]
