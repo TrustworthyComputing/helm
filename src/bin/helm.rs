@@ -8,8 +8,9 @@ use helm::{
 use itertools::Itertools;
 use std::{
     collections::HashMap,
-    time::Instant,
+    time::Instant
 };
+use termion::color;
 use tfhe::boolean::prelude::*;
 
 fn main() {
@@ -20,8 +21,13 @@ fn main() {
         .arg(Arg::new("input")
             .long("input")
             .value_name("FILE")
-            .help("Sets the input file to use")
+            .help("Verilog input file to evaluate")
             .required(true))
+        .arg(Arg::new("wires")
+            .long("wires")
+            .value_name("FILE")
+            .help("Input wire values")
+            .required(false))
         .arg(Arg::new("cycles")
             .long("cycles")
             .value_name("NUMBER")
@@ -30,8 +36,20 @@ fn main() {
             .default_value("1")
             .value_parser(clap::value_parser!(usize)))
         .get_matches();
-    let file_name = matches.get_one::<String>("input").expect("required");
+    let file_name = matches.get_one::<String>("input").expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
+    
+    let input_wire_map = {
+        if matches.contains_id("wires") {
+            let input_wires_file = matches.get_one::<String>("wires").unwrap();
+
+            verilog_parser::read_input_wires(&input_wires_file)
+        } else {
+            println!("{}[!]{} No CSV file provided for the input wires, they will be initialized to false.", color::Fg(color::LightYellow), color::Fg(color::Reset));
+
+            HashMap::new()
+        }
+    };
 
     let (mut gates, wire_map_im, inputs, dff_outputs, is_sequential) = 
         verilog_parser::read_verilog_file(file_name);
@@ -53,7 +71,14 @@ fn main() {
     // Initialization of inputs to true
     let mut wire_map = wire_map_im.clone();
     for input_wire in &inputs {
-        wire_map.insert(input_wire.to_string(), true);
+        // if no inputs are provided, initialize it to false
+        if input_wire_map.len() == 0 {
+            wire_map.insert(input_wire.to_string(), false);
+        } else if !input_wire_map.contains_key(input_wire) {
+            panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+        } else {
+            wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
+        }
     }
     for wire in &dff_outputs {
         wire_map.insert(wire.to_string(), false);
@@ -82,7 +107,20 @@ fn main() {
         enc_wire_map.insert(wire, client_key.encrypt(value));
     }
     for input_wire in &inputs {
-        enc_wire_map.insert(input_wire.to_string(), client_key.encrypt(true));
+        // if no inputs are provided, initialize it to false
+        if input_wire_map.len() == 0 {
+            enc_wire_map.insert(
+                input_wire.to_string(),
+                client_key.encrypt(false)
+            );
+        } else if !input_wire_map.contains_key(input_wire) {
+            panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+        } else {
+            enc_wire_map.insert(
+                input_wire.to_string(), 
+                client_key.encrypt(input_wire_map[input_wire])
+            );
+        }
     }
     for wire in &dff_outputs {
         enc_wire_map.insert(wire.to_string(), client_key.encrypt(false));

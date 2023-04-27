@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::collections::HashMap;
+use csv::Reader;
 
 use crate::circuit::{Gate, GateType};
 
@@ -144,12 +145,49 @@ pub fn read_verilog_file(
     (gates, wire_map, inputs, dff_outputs, is_sequential)
 }
 
+pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
+    let inputs_file = File::open(file_name).expect("Failed to open CSV file");
+    let reader = BufReader::new(inputs_file);
+
+    let mut input_map = HashMap::new();
+    for rec in Reader::from_reader(reader).records() {
+        let (input_wire, init_value): (String, bool) = {
+            let record = rec.unwrap();
+            assert_eq!(record.len(), 2);
+
+            (
+                record[0].trim().to_string(), 
+                record[1].trim().to_string().parse::<bool>().unwrap()
+            )
+        };
+        
+        input_map.insert(input_wire, init_value);
+    }
+
+    input_map
+}
+
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs,_,  _) = 
+    let (gates, wire_map, inputs, _, _) = 
         read_verilog_file("verilog-files/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
     assert_eq!(inputs.len(), 5);
 }
+
+#[test]
+fn test_input_wires_parser() {
+    let (_, _, inputs, _, _) = 
+        read_verilog_file("verilog-files/2bit_adder.v");
+
+    let input_wires_map = 
+        read_input_wires("verilog-files/2bit_adder.input.csv");
+
+    assert_eq!(input_wires_map.len(), inputs.len());
+    for input_wire in inputs {
+        assert!(input_wires_map.contains_key(&input_wire));
+    }
+}
+
