@@ -3,6 +3,7 @@ use debug_print::debug_println;
 use helm::{
     ascii,
     circuit,
+    circuit::EvalCircuit,
     verilog_parser,
 };
 use itertools::Itertools;
@@ -11,11 +12,97 @@ use std::{
     time::Instant
 };
 use termion::color;
-use tfhe::boolean::prelude::*;
+use tfhe::{
+    boolean::prelude::*,
+    integer::{
+        ServerKey as ServerKeyInt,
+        ClientKey as ClientKeyInt,
+        wopbs::WopbsKey as WopbsKeyInt,
+    },
+    shortint::{
+        wopbs::WopbsKey as WopbsKeyShortInt,  
+        parameters::{
+            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_0,
+            PARAM_MESSAGE_1_CARRY_0,
+        },      
+    },
+};
+
+fn eval_lut_circuit(
+    level_map: HashMap<usize, Vec<helm::circuit::Gate>>, 
+    mut wire_map: HashMap<String, bool>,
+    num_cycles: usize,
+    wire_map_im: HashMap<String, bool, std::collections::hash_map::RandomState>,
+    input_wire_map: HashMap<String, bool, std::collections::hash_map::RandomState>,
+    inputs: Vec<String>,
+    dff_outputs: Vec<String>,
+) {
+    let mut start = Instant::now();
+    // Generate the client key and the server key:
+    let (cks_shortint, sks_shortint) = tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_0); // single bit ctxt
+    let cks = ClientKeyInt::from(cks_shortint.clone());
+    let sks = ServerKeyInt::from_shortint(&cks, sks_shortint.clone());
+    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &&WOPBS_PARAM_MESSAGE_1_CARRY_0);
+    let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
+    println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
+
+    let mut circuit = circuit::LutCircuit::new(wopbs_key_shortint, wopbs_key, sks, level_map);
+
+    for cycle in 0..num_cycles {
+        wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
+        println!("Cycle {}) Evaluation:", cycle);
+        for wire_name in wire_map.keys().sorted() {
+            println!(" {}: {}", wire_name, wire_map[wire_name]);
+        }
+        println!();
+    }
+
+    // Client encrypts their inputs
+    start = Instant::now();
+    let mut enc_wire_map = HashMap::new();
+    for (wire, value) in wire_map_im {
+        enc_wire_map.insert(wire, cks.encrypt_one_block(value as u64));
+    }
+    for input_wire in &inputs {
+        // if no inputs are provided, initialize it to false
+        if input_wire_map.len() == 0 {
+            enc_wire_map.insert(
+                input_wire.to_string(),
+                cks.encrypt_one_block(0)
+            );
+        } else if !input_wire_map.contains_key(input_wire) {
+            panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+        } else {
+            enc_wire_map.insert(
+                input_wire.to_string(), 
+                cks.encrypt_one_block(input_wire_map[input_wire] as u64)
+            );
+        }
+    }
+    for wire in &dff_outputs {
+        enc_wire_map.insert(wire.to_string(), cks.encrypt_one_block(0));
+    }
+    println!("Encryption done in {} seconds.", start.elapsed().as_secs_f64());
+
+    for cycle in 0..num_cycles {
+        start = Instant::now();
+        enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+        println!("Cycle {}) Evaluation done in {} seconds.\n", cycle, start.elapsed().as_secs_f64());
+    }
+
+    // Client decrypts the output of the circuit
+    start = Instant::now();
+    println!("Encrypted Evaluation:");
+    for wire_name in enc_wire_map.keys().sorted() {
+        println!(" {}: {}", wire_name, cks.decrypt_one_block(&enc_wire_map[wire_name]));
+    }
+    println!("Decryption done in {} seconds.", start.elapsed().as_secs_f64());
+
+    println!();
+}
 
 fn main() {
     ascii::print_art();
-
     let matches = Command::new("HELM")
         .about("HELM: Homomorphic Evaluation with Lookup table Memoization")
         .arg(Arg::new("input")
@@ -51,13 +138,13 @@ fn main() {
         }
     };
 
-    let (mut gates, wire_map_im, inputs, dff_outputs, is_sequential) = 
+    let (mut gates, wire_map_im, inputs, dff_outputs, is_sequential, has_luts) = 
         verilog_parser::read_verilog_file(file_name);
     
     if num_cycles > 1 && !is_sequential {
         panic!("Cannot run combinational circuit for more than one cycles.");
     }
-    let mut level_map = circuit::compute_levels(&mut gates, &inputs);
+    let level_map = circuit::compute_levels(&mut gates, &inputs);
 
     #[cfg(debug_assertions)]
     for level in level_map.keys().sorted() {
@@ -85,20 +172,25 @@ fn main() {
     }
     debug_println!("before eval wire_map: {:?}", wire_map);
 
+    // Encrypted evaluation
+    if has_luts {
+        eval_lut_circuit(level_map, wire_map, num_cycles, wire_map_im, input_wire_map, inputs, dff_outputs);
+        return;
+    }
+    let mut start = Instant::now();
+    let (client_key, server_key) = gen_keys();
+    println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
+
+    let mut circuit = circuit::GateCircuit::new(Some(server_key), level_map);
+
     for cycle in 0..num_cycles {
-        // circuit::_evaluate_circuit_sequentially(&mut gates, &mut wire_map, cycle);
-        wire_map = circuit::evaluate_circuit_parallel(&mut level_map, &wire_map, cycle);
+        wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
         println!("Cycle {}) Evaluation:", cycle);
         for wire_name in wire_map.keys().sorted() {
             println!(" {}: {}", wire_name, wire_map[wire_name]);
         }
         println!();
     }
-
-    // Encrypted evaluation
-    let mut start = Instant::now();
-    let (client_key, server_key) = gen_keys();
-    println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
     // Client encrypts their inputs
     start = Instant::now();
@@ -129,7 +221,7 @@ fn main() {
 
     for cycle in 0..num_cycles {
         start = Instant::now();
-        enc_wire_map = circuit::evaluate_encrypted_circuit_parallel(&server_key, &mut level_map, &enc_wire_map, cycle);
+        enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
         println!("Cycle {}) Evaluation done in {} seconds.\n", cycle, start.elapsed().as_secs_f64());
     }
 

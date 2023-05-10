@@ -15,8 +15,8 @@ use tfhe::{
             KeyswitchBootstrap,
         },
         parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_0,
-            PARAM_MESSAGE_1_CARRY_0,
+            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1,
+            PARAM_MESSAGE_1_CARRY_1,
         },
         wopbs::WopbsKey as WopbsKeyShortInt,
     },
@@ -73,11 +73,11 @@ fn eval_luts(x: u64, lut_entries: &Vec<u64>) -> u64{
 
 fn main() {
     // Generate the client key and the server key:
-    let (cks_shortint, sks_shortint) = ShortInt::gen_keys(PARAM_MESSAGE_1_CARRY_0); // single bit ctxt
+    let (cks_shortint, sks_shortint) = ShortInt::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
     let cks = ClientKeyInt::from(cks_shortint.clone());
     let sks = ServerKeyInt::from_shortint(&cks, sks_shortint.clone());
 
-    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_0);
+    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_1);
     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
     let nb_block = 6;

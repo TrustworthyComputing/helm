@@ -84,11 +84,12 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
 
 pub fn read_verilog_file(
     file_name: &str
-) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, bool) {
+) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, bool, bool) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
     let mut is_sequential = false;
+    let mut has_luts = false;
     let mut gates = Vec::new();
     let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
@@ -136,13 +137,16 @@ pub fn read_verilog_file(
                     inputs.push(gate.get_output_wire());
                     dff_outputs.push(gate.get_output_wire());
                 }
+                else if gate.get_gate_type() == GateType::Lut {
+                    has_luts = true;
+                }
                 wire_map.insert(gate.get_output_wire(), false);
                 gates.push(gate);
             },
         }
     }
 
-    (gates, wire_map, inputs, dff_outputs, is_sequential)
+    (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts)
 }
 
 pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
@@ -169,7 +173,7 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _) = 
+    let (gates, wire_map, inputs, _, _, _) = 
         read_verilog_file("verilog-files/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
@@ -179,7 +183,7 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _) = 
+    let (_, _, inputs, _, _, _) = 
         read_verilog_file("verilog-files/2bit_adder.v");
 
     let input_wires_map = 
