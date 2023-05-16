@@ -262,14 +262,14 @@ fn main() {
 
 #[test]
 fn test_preprocessor() {
-    let in_file_name = String::from("verilog-files/s27.v");
-    let out_file_name = String::from("verilog-files/s27.out.v");
+    let in_file_name = String::from("verilog-files/netlists/s27.v");
+    let out_file_name = String::from("verilog-files/netlists/s27.out.v");
 
     let wire_dict = build_assign_dict(&in_file_name);
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
     let (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts) = 
-        verilog_parser::read_verilog_file("verilog-files/s27.out.v");
+        verilog_parser::read_verilog_file("verilog-files/netlists/s27.out.v");
 
     assert_eq!(is_sequential, true);
     assert_eq!(has_luts, false);
@@ -277,14 +277,14 @@ fn test_preprocessor() {
     assert_eq!(wire_map.len(), 14);
     assert_eq!(inputs.len() - dff_outputs.len(), 6); // these are the true inputs
 
-    let in_file_name = String::from("verilog-files/8bit-adder-lut.v");
-    let out_file_name = String::from("verilog-files/8bit-adder-lut.out.v");
+    let in_file_name = String::from("verilog-files/netlists/8bit-adder-lut.v");
+    let out_file_name = String::from("verilog-files/netlists/8bit-adder-lut.out.v");
 
     let wire_dict = build_assign_dict(&in_file_name);
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
     let (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts) = 
-        verilog_parser::read_verilog_file("verilog-files/8bit-adder-lut.out.v");
+        verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
 
     assert_eq!(is_sequential, false);
     assert_eq!(has_luts, true);

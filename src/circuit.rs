@@ -707,7 +707,7 @@ fn test_gate_evaluation() {
 #[test]
 fn test_evaluate_circuit_parallel() {
     let (mut gates, mut wire_map, inputs, _, _,_) = 
-        crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
     let level_map = compute_levels(&mut gates, &inputs);
     for input_wire in &inputs {
@@ -731,7 +731,7 @@ fn test_evaluate_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
     let (mut gates, wire_map_im, inputs, _, _,_) = 
-        crate::verilog_parser::read_verilog_file("verilog-files/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     // Encrypted
@@ -768,7 +768,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
     let (mut gates, wire_map_im, inputs, _, _,_) = 
-        crate::verilog_parser::read_verilog_file("verilog-files/8bit-adder-lut.out.v");
+        crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     // Encrypted

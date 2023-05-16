@@ -4,14 +4,17 @@
 
 
 ## Overview
-TODO: write an overview here ...
+HELM is a framework for evaluating synthesizable HDL designs in the encrypted 
+domain that is designed for multi-core CPU evaluation. Users can choose between
+evaluating circuits composed of standard Boolean gates or low-precision LUTs. In 
+either case, both sequential and combinational circuits are supported. 
 
 ```shell
 cargo build --release
 cargo test --release
-cargo run --bin preprocessor -- --input ./verilog-files/s27.v
-cargo run --bin helm --release -- --input ./verilog-files/s27.out.v
-cargo run --bin helm --release -- --input ./verilog-files/2bit_adder.v --wires ./verilog-files/2bit_adder.input.csv
+cargo run --bin preprocessor -- --input ./verilog-files/netlists/s27.v
+cargo run --bin helm --release -- --input ./verilog-files/netlists/s27.out.v
+cargo run --bin helm --release -- --input ./verilog-files/netlists/2bit_adder.v --wires ./verilog-files/inputs/2bit_adder.input.csv
 ```
 
 <p align="center">

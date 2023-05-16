@@ -59,7 +59,7 @@ fn main() -> std::io::Result<()> {
     let bits = 4;
     let circuit = generate_adder_nbit(bits);
     let mut file = File::create(
-        "verilog-files/".to_owned() + &bits.to_string() + "bit_adder.v"
+        "verilog-files/netlists".to_owned() + &bits.to_string() + "bit_adder.v"
     )?;
     file.write_all(circuit.as_bytes())?;
     Ok(())
