@@ -24,6 +24,6 @@ module adder_2bit(a, b, cin, sum, cout);
   xor x3(a[1], b[1], s1);
   and a3(a[1], b[1], c2);
   xor x4(s1, c1, sum[1]);
-  and a4(s1, c1, i1);
   or o2(i1, c2, cout);
+  and a4(s1, c1, i1);
 endmodule
