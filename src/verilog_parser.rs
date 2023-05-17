@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use csv::Reader;
 
 use crate::circuit::{Gate, GateType};
@@ -84,16 +84,16 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
 
 pub fn read_verilog_file(
     file_name: &str
-) -> (Vec<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, bool, bool) {
+) -> (HashSet<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, Vec<String>, bool, bool) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
     let mut is_sequential = false;
     let mut has_luts = false;
-    let mut gates = Vec::new();
+    let mut gates = HashSet::new();
     let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
-    let mut _outputs = Vec::new();
+    let mut outputs = Vec::new();
     let mut _wires = Vec::new();
     let mut dff_outputs = Vec::new();
     for line in reader.lines() {
@@ -117,9 +117,9 @@ pub fn read_verilog_file(
             "output" => {
                 if let Some((start, end)) = parse_range(tokens[1]) {
                     let output_name = tokens[2].trim_matches(',').trim_end_matches(';');
-                    _outputs.extend((start..end+1).map(|i| format!("{}[{}]", output_name, i)));
+                    outputs.extend((start..end+1).map(|i| format!("{}[{}]", output_name, i)));
                 } else {
-                    _outputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
+                    outputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
                 }
             },
             "wire" => {
@@ -141,12 +141,12 @@ pub fn read_verilog_file(
                     has_luts = true;
                 }
                 wire_map.insert(gate.get_output_wire(), false);
-                gates.push(gate);
+                gates.insert(gate);
             },
         }
     }
 
-    (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts)
+    (gates, wire_map, inputs, outputs, dff_outputs, is_sequential, has_luts)
 }
 
 pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
@@ -173,7 +173,7 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _) = 
+    let (gates, wire_map, inputs, _, _, _, _) = 
         read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
@@ -183,7 +183,7 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _) = 
+    let (_, _, inputs, _, _, _, _) = 
         read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
     let input_wires_map = 

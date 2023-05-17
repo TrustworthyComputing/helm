@@ -2,11 +2,12 @@ use debug_print::debug_println;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, hash_map::Entry, HashSet},
     // thread,
     sync::{RwLock, Arc},
     fmt,
     vec,
+    hash::{Hash, Hasher}
 };
 use tfhe::{
     boolean::prelude::*,
@@ -153,6 +154,34 @@ pub fn lut(
     // Return LSB
     radix_ct.blocks()[0].clone()
 }
+
+// Topologically sort the gates
+pub fn sort_circuit(gates: &mut HashSet<Gate>, inputs: &Vec<String>) -> Vec<Gate> {
+    let mut sorted: Vec<Gate> = Vec::new();
+    let mut wire_status = HashSet::new();
+
+    inputs.iter().for_each(|input| {
+        wire_status.insert(input.clone());
+    });
+    while !gates.is_empty() {
+        gates.retain(|gate| {
+            let ready = gate
+                .input_wires
+                .iter()
+                .all(|wire| wire_status.contains(wire));
+
+            if ready {
+                wire_status.insert(gate.output_wire.clone());
+                sorted.push(gate.clone());
+            }
+
+            !ready
+        });
+    }
+
+    sorted
+}
+
 
 impl EvalCircuit<Ciphertext> for GateCircuit {
     fn evaluate(
@@ -390,8 +419,9 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
 }
 
 #[derive(Clone)]
+// #[derive(Clone, PartialEq, Hash)]
 pub struct Gate {
-    _gate_name: String,
+    gate_name: String,
     gate_type: GateType,
     input_wires: Vec<String>,
     lut_const: Option<usize>,
@@ -403,10 +433,24 @@ pub struct Gate {
     encrypted_lut_output: Option<CiphertextBase<KeyswitchBootstrap>>,
 }
 
+impl Eq for Gate {}
+
+impl PartialEq for Gate {
+    fn eq(&self, other: &Self) -> bool {
+        self.gate_name == other.gate_name
+    }
+}
+
+impl Hash for Gate {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.gate_name.hash(state);
+    }
+}
+
 impl fmt::Debug for Gate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}({:?}) = {:?}({:?}). Level {}", 
-            self._gate_name,
+            self.gate_name,
             self.output_wire,
             self.output,
             self.gate_type,
@@ -418,7 +462,7 @@ impl fmt::Debug for Gate {
 
 impl Gate {
     pub fn new(
-        _gate_name: String, 
+        gate_name: String, 
         gate_type: GateType,
         input_wires: Vec<String>,
         lut_const: Option<usize>,
@@ -426,7 +470,7 @@ impl Gate {
         level: usize
     ) -> Self {
         Gate {
-            _gate_name,
+            gate_name,
             gate_type,
             input_wires,
             lut_const,
@@ -706,10 +750,12 @@ fn test_gate_evaluation() {
 
 #[test]
 fn test_evaluate_circuit_parallel() {
-    let (mut gates, mut wire_map, inputs, _, _,_) = 
+    let (mut gates_set, mut wire_map, inputs, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
-    let level_map = compute_levels(&mut gates, &inputs);
+    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
+
+    let level_map = compute_levels(&mut ordered_gates, &inputs);
     for input_wire in &inputs {
         wire_map.insert(input_wire.to_string(), true);
     }
@@ -717,7 +763,7 @@ fn test_evaluate_circuit_parallel() {
     let mut circuit = GateCircuit::new(None, level_map);
     wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
 
-    assert_eq!(gates.len(), 10);
+    assert_eq!(ordered_gates.len(), 10);
     assert_eq!(wire_map.len(), 15);
     assert_eq!(inputs.len(), 5);
 
@@ -730,13 +776,15 @@ fn test_evaluate_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
-    let (mut gates, wire_map_im, inputs, _, _,_) = 
+    let (mut gates_set, wire_map_im, inputs, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
+    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
+
     // Encrypted
     let (client_key, server_key) = gen_keys();
-    let level_map = compute_levels(&mut gates, &inputs);
+    let level_map = compute_levels(&mut ordered_gates, &inputs);
     
     // Plaintext
     for input_wire in &inputs {
@@ -767,9 +815,11 @@ fn test_evaluate_encrypted_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
-    let (mut gates, wire_map_im, inputs, _, _,_) = 
+    let (mut gates_set, wire_map_im, inputs, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
     let mut ptxt_wire_map = wire_map_im.clone();
+
+    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
 
     // Encrypted
     let (cks_shortint, sks_shortint) = tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
@@ -779,7 +829,7 @@ fn test_evaluate_encrypted_lut_circuit_parallel() {
     let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_1);
     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
-    let level_map = compute_levels(&mut gates, &inputs);
+    let level_map = compute_levels(&mut ordered_gates, &inputs);
     
     // Plaintext
     for input_wire in &inputs {

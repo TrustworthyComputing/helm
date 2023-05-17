@@ -268,7 +268,7 @@ fn test_preprocessor() {
     let wire_dict = build_assign_dict(&in_file_name);
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
-    let (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts) = 
+    let (gates, wire_map, inputs, _, dff_outputs, is_sequential, has_luts) = 
         verilog_parser::read_verilog_file("verilog-files/netlists/s27.out.v");
 
     assert_eq!(is_sequential, true);
@@ -283,7 +283,7 @@ fn test_preprocessor() {
     let wire_dict = build_assign_dict(&in_file_name);
     convert_verilog(&in_file_name, &out_file_name, &wire_dict);
 
-    let (gates, wire_map, inputs, dff_outputs, is_sequential, has_luts) = 
+    let (gates, wire_map, inputs, _, dff_outputs, is_sequential, has_luts) = 
         verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
 
     assert_eq!(is_sequential, false);

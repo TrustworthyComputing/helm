@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::{arg, Arg, Command, ArgAction};
 use debug_print::debug_println;
 use helm::{
     ascii,
@@ -6,9 +6,8 @@ use helm::{
     circuit::EvalCircuit,
     verilog_parser,
 };
-use itertools::Itertools;
 use std::{
-    collections::HashMap,
+    collections::{HashMap},
     time::Instant
 };
 use termion::color;
@@ -27,6 +26,9 @@ use tfhe::{
         },      
     },
 };
+
+#[cfg(debug_assertions)]
+use itertools::Itertools;
 
 fn eval_lut_circuit(
     level_map: HashMap<usize, Vec<helm::circuit::Gate>>, 
@@ -51,10 +53,10 @@ fn eval_lut_circuit(
     for cycle in 0..num_cycles {
         wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
         println!("Cycle {}) Evaluation:", cycle);
-        for wire_name in wire_map.keys().sorted() {
-            println!(" {}: {}", wire_name, wire_map[wire_name]);
-        }
-        println!();
+        // for wire_name in wire_map.keys().sorted() {
+        //     println!(" {}: {}", wire_name, wire_map[wire_name]);
+        // }
+        // println!();
     }
 
     // Client encrypts their inputs
@@ -93,9 +95,9 @@ fn eval_lut_circuit(
     // Client decrypts the output of the circuit
     start = Instant::now();
     println!("Encrypted Evaluation:");
-    for wire_name in enc_wire_map.keys().sorted() {
-        println!(" {}: {}", wire_name, cks.decrypt_one_block(&enc_wire_map[wire_name]));
-    }
+    // for wire_name in enc_wire_map.keys().sorted() {
+    //     println!(" {}: {}", wire_name, cks.decrypt_one_block(&enc_wire_map[wire_name]));
+    // }
     println!("Decryption done in {} seconds.", start.elapsed().as_secs_f64());
 
     println!();
@@ -122,10 +124,19 @@ fn main() {
             .required(false)
             .default_value("1")
             .value_parser(clap::value_parser!(usize)))
+        .arg(Arg::new("verbose")
+            .short('v')
+            .long("verbose")
+            .help("Turn verbose printing on")
+            .action(ArgAction::SetTrue))
+        .arg(arg!(
+            -v --verbose ... "Turn verbose printing on"
+        ))
         .get_matches();
     let file_name = matches.get_one::<String>("input").expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
-    
+    let verbose = matches.get_flag("verbose");
+
     let input_wire_map = {
         if matches.contains_id("wires") {
             let input_wires_file = matches.get_one::<String>("wires").unwrap();
@@ -138,13 +149,14 @@ fn main() {
         }
     };
 
-    let (mut gates, wire_map_im, inputs, dff_outputs, is_sequential, has_luts) = 
+    let (mut gates_set, wire_map_im, inputs, outputs, dff_outputs, is_sequential, has_luts) = 
         verilog_parser::read_verilog_file(file_name);
     
     if num_cycles > 1 && !is_sequential {
         panic!("Cannot run combinational circuit for more than one cycles.");
     }
-    let level_map = circuit::compute_levels(&mut gates, &inputs);
+    let mut ordered_gates = circuit::sort_circuit(&mut gates_set, &inputs);
+    let level_map = circuit::compute_levels(&mut ordered_gates, &inputs);
 
     #[cfg(debug_assertions)]
     for level in level_map.keys().sorted() {
@@ -186,9 +198,12 @@ fn main() {
     for cycle in 0..num_cycles {
         wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
         println!("Cycle {}) Evaluation:", cycle);
+        
+        #[cfg(debug_assertions)]
         for wire_name in wire_map.keys().sorted() {
             println!(" {}: {}", wire_name, wire_map[wire_name]);
         }
+        #[cfg(debug_assertions)]
         println!();
     }
 
@@ -228,8 +243,14 @@ fn main() {
     // Client decrypts the output of the circuit
     start = Instant::now();
     println!("Encrypted Evaluation:");
-    for wire_name in enc_wire_map.keys().sorted() {
-        println!(" {}: {}", wire_name, client_key.decrypt(&enc_wire_map[wire_name]));
+    // for (i, wire_name) in enc_wire_map.keys().sorted().enumerate() {
+    for (i, output_wire) in outputs.iter().enumerate() {
+        if i > 10 && !verbose {
+            println!("{}[!]{} More than ten outputs, pass `--verbose` to see output.", color::Fg(color::LightYellow), color::Fg(color::Reset));
+            break;
+        } else {
+            println!(" {}: {}", output_wire, client_key.decrypt(&enc_wire_map[output_wire]));
+        }
     }
     println!("Decryption done in {} seconds.", start.elapsed().as_secs_f64());
 
