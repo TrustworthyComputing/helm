@@ -12,9 +12,15 @@ either case, both sequential and combinational circuits are supported.
 ```shell
 cargo build --release
 cargo test --release
-cargo run --bin preprocessor -- --input ./verilog-files/netlists/s27.v
+cargo run --bin preprocessor --release -- --input ./verilog-files/netlists/s27.v
 cargo run --bin helm --release -- --input ./verilog-files/netlists/s27.out.v
 cargo run --bin helm --release -- --input ./verilog-files/netlists/2bit_adder.v --wires ./verilog-files/inputs/2bit_adder.input.csv
+```
+
+## Example of an ISCAS'85 circuit
+```shell
+cargo run --bin preprocessor --release -- --input ./verilog-files/netlists/c880.v
+cargo run --bin helm --release -- --input ./verilog-files/netlists/c880.out.v
 ```
 
 <p align="center">

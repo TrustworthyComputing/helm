@@ -366,9 +366,6 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
         enc_wire_map: &HashMap<String, CiphertextBase<KeyswitchBootstrap>>,
         cycle: usize,
     ) -> HashMap<String, CiphertextBase<KeyswitchBootstrap>> {
-
-// TODO: replace with LUTs
-
         let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
             .iter()
             .enumerate()
@@ -397,7 +394,7 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
                         eval_values[index].read().unwrap().clone()
                     })
                     .collect();
-                let output_value = gate.evaluate_encrypted_lut(&self.wopbs_shortkey, &self.wopbs_intkey, &self.server_intkey, &input_values, cycle) ;
+                let output_value = gate.evaluate_encrypted_lut(&self.wopbs_shortkey, &self.wopbs_intkey, &self.server_intkey, &input_values, cycle);
                 // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
 
                 // Get the corresponding index in the wires array
@@ -614,12 +611,23 @@ pub fn compute_levels(
             depth = std::cmp::max(depth, input_depth + 1);
         });
 
+        gate.level = depth;
         match level_map.entry(depth) {
             Entry::Vacant(e) => { e.insert(vec![(*gate).clone()]); },
             Entry::Occupied(mut e) => { e.get_mut().push((*gate).clone()); }
         }
-        gate.level = depth;
         wire_levels.insert(gate.get_output_wire(), depth);
+    }
+
+    // Move the DFFs in the correct key spot
+    let total_keys = level_map.len();
+    if let Some(values) = level_map.remove(&std::usize::MAX) {
+        level_map.insert(total_keys, values);
+    }
+    if let Some(gate_vec) = level_map.get_mut(&total_keys) {
+        for gate in gate_vec.iter_mut() {
+            gate.level = total_keys;
+        }
     }
 
     level_map

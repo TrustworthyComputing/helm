@@ -1,4 +1,4 @@
-use clap::{arg, Arg, Command, ArgAction};
+use clap::{Arg, Command, ArgAction};
 use debug_print::debug_println;
 use helm::{
     ascii,
@@ -129,9 +129,6 @@ fn main() {
             .long("verbose")
             .help("Turn verbose printing on")
             .action(ArgAction::SetTrue))
-        .arg(arg!(
-            -v --verbose ... "Turn verbose printing on"
-        ))
         .get_matches();
     let file_name = matches.get_one::<String>("input").expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
