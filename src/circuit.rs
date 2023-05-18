@@ -6,6 +6,7 @@ use std::{
     vec,
 };
 use crate::gates::{Gate, GateType};
+use termion::color;
 use tfhe::{
     boolean::prelude::*,
     integer::{
@@ -40,11 +41,14 @@ pub trait EvalCircuit<T> {
     fn evaluate_encrypted(
         &mut self, enc_wire_map: &HashMap<String, T>, current_cycle: usize,
     ) -> HashMap<String, T>;
+
+    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, T>, verbose: bool);
 }
 
 pub struct Circuit {
     gates: HashSet<Gate>,
     input_wires: Vec<String>,
+    output_wires: Vec<String>,
     dff_outputs: Vec<String>,
     ordered_gates: Vec<Gate>,
     level_map: HashMap<usize, Vec<Gate>>,
@@ -66,11 +70,13 @@ pub struct LutCircuit {
 
 impl Circuit {
     pub fn new(
-        gates: HashSet<Gate>, input_wires: Vec<String>, dff_outputs: Vec<String>
+        gates: HashSet<Gate>, input_wires: Vec<String>, 
+        output_wires: Vec<String>, dff_outputs: Vec<String>
     ) -> Circuit {
         Circuit {
             gates: gates,
             input_wires: input_wires,
+            output_wires: output_wires,
             dff_outputs: dff_outputs,
             ordered_gates: Vec::new(),
             level_map: HashMap::new(),
@@ -331,6 +337,23 @@ impl EvalCircuit<Ciphertext> for GateCircuit {
             })
             .collect()
     }
+
+    fn decrypt_outputs(
+        &self, enc_wire_map: &HashMap<String, Self::CtxtType>, verbose: bool
+    ) {
+        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+            if i > 10 && !verbose {
+                println!("{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
+                    color::Fg(color::LightYellow), color::Fg(color::Reset)
+                );
+                break;
+            } else {
+                println!(" {}: {}", output_wire,
+                    self.client_key.decrypt(&enc_wire_map[output_wire])
+                );
+            }
+        }
+    }
 }
 
 impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
@@ -422,6 +445,23 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
                 (key.to_string(), eval_values[index].read().unwrap().clone())
             })
             .collect()
+    }
+
+    fn decrypt_outputs(
+        &self, enc_wire_map: &HashMap<String, Self::CtxtType>, verbose: bool
+    ) {
+        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+            if i > 10 && !verbose {
+                println!("{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
+                    color::Fg(color::LightYellow), color::Fg(color::Reset)
+                );
+                break;
+            } else {
+                println!(" {}: {}", output_wire,
+                    self.client_key.decrypt_one_block(&enc_wire_map[output_wire])
+                );
+            }
+        }
     }
 }
 
@@ -529,7 +569,7 @@ fn test_evaluate_circuit_parallel() {
     let (gates_set, mut wire_map, input_wires, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
    
-    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);
     circuit.sort_circuit();
     circuit.compute_levels();
     
@@ -556,7 +596,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
-    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);
     circuit.sort_circuit();
     circuit.compute_levels();
 
@@ -596,7 +636,7 @@ fn test_evaluate_encrypted_lut_circuit_parallel() {
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
-    let mut circuit_ptxt = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    let mut circuit_ptxt = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);
     circuit_ptxt.sort_circuit();
     circuit_ptxt.compute_levels();
 

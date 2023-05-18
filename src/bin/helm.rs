@@ -81,14 +81,14 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
 fn main() {
     ascii::print_art();
     let (file_name, num_cycles, verbose, input_wire_map) = parse_args();
-    let (gates_set, wire_map_im, input_wires, outputs, dff_outputs, is_sequential, has_luts) = 
+    let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts) = 
         verilog_parser::read_verilog_file(&file_name);
     
     if num_cycles > 1 && !is_sequential {
         panic!("Cannot run combinational circuit for more than one cycles.");
     }
 
-    let mut circuit_ptxt = circuit::Circuit::new(gates_set, input_wires.clone(), dff_outputs.clone());
+    let mut circuit_ptxt = circuit::Circuit::new(gates_set, input_wires, output_wires, dff_outputs.clone());
 
     circuit_ptxt.sort_circuit();
     circuit_ptxt.compute_levels();
@@ -141,18 +141,7 @@ fn main() {
         // Client decrypts the output of the circuit
         start = Instant::now();
         println!("Encrypted Evaluation:");
-        for (i, output_wire) in outputs.iter().enumerate() {
-            if i > 10 && !verbose {
-                println!("{}[!]{} More than ten outputs, pass `--verbose` to see output.",
-                    color::Fg(color::LightYellow), color::Fg(color::Reset)
-                );
-                break;
-            } else {
-                println!(" {}: {}", output_wire,
-                    client_key.decrypt(&enc_wire_map[output_wire])
-                );
-            }
-        }
+        EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
         println!("Decryption done in {} seconds.", start.elapsed().as_secs_f64());
     } else { // LUT mode
         let mut start = Instant::now();
@@ -191,18 +180,7 @@ fn main() {
         // Client decrypts the output of the circuit
         start = Instant::now();
         println!("Encrypted Evaluation:");
-        for (i, output_wire) in outputs.iter().enumerate() {
-            if i > 10 && !verbose {
-                println!("{}[!]{} More than ten outputs, pass `--verbose` to see output.",
-                    color::Fg(color::LightYellow), color::Fg(color::Reset)
-                );
-                break;
-            } else {
-                println!(" {}: {}", output_wire, 
-                    client_key.decrypt_one_block(&enc_wire_map[output_wire])
-                );
-            }
-        }
+        EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
         println!("Decryption done in {} seconds.", start.elapsed().as_secs_f64());
     }
     println!();
