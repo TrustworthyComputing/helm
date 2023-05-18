@@ -1,21 +1,16 @@
-use debug_print::debug_println;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, hash_map::Entry, HashSet},
-    // thread,
     sync::{RwLock, Arc},
-    fmt,
     vec,
-    hash::{Hash, Hasher}
 };
+use crate::gates::{Gate, GateType};
 use tfhe::{
     boolean::prelude::*,
     integer::{
-        ciphertext::BaseRadixCiphertext,
-        IntegerCiphertext,
         ServerKey as ServerKeyInt,
-        wopbs as WopbsInt,
+        ClientKey as ClientKeyInt,
         wopbs::WopbsKey as WopbsKeyInt,
     },
     shortint::{
@@ -27,345 +22,267 @@ use tfhe::{
 #[cfg(test)]
 use rand::Rng;
 #[cfg(test)]
-use tfhe::integer::ClientKey as ClientKeyInt;
+use tfhe::shortint::parameters::{
+    parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, 
+    PARAM_MESSAGE_1_CARRY_1
+};
 #[cfg(test)]
-use tfhe::shortint::parameters::parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1;
-#[cfg(test)]
-use tfhe::shortint::parameters::PARAM_MESSAGE_1_CARRY_1;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum GateType {
-    And,    // and  ID(in0, in1, out);
-    Dff,    // dff  ID(in, ouevaluate_encryptedt);
-    Lut,    // lut  ID(const, in0, ... , inN-1, out);
-    Mux,    // mux  ID(in0, in1, sel, out);
-    Nand,   // nand ID(in0, in1, out);
-    Nor,    // nor  ID(in0, in1, out);
-    Not,    // not  ID(in, out);
-    Or,     // or   ID(in0, in1, out);
-    Xnor,   // xnor ID(in0, in1, out);
-    Xor,    // xor  ID(in0, in1, out);
-}
+use debug_print::debug_println;
 
 pub trait EvalCircuit<T> {
-    fn evaluate(
-        &mut self,
-        wire_map: &HashMap<String, bool>,
-        current_cycle: usize
-    ) -> HashMap<String, bool>;
-    
+    type CtxtType;
+
+    fn encrypt_inputs(
+        &mut self, wire_map_im: &HashMap<String, bool>,
+        input_wire_map: &HashMap<String, bool>,
+    ) -> HashMap<String, T>;
+
     fn evaluate_encrypted(
-        &mut self,
-        enc_wire_map: &HashMap<String, T>,
-        current_cycle: usize,
+        &mut self, enc_wire_map: &HashMap<String, T>, current_cycle: usize,
     ) -> HashMap<String, T>;
 }
 
-pub struct GateCircuit {
-    server_key: Option<ServerKey>,
+pub struct Circuit {
+    gates: HashSet<Gate>,
+    input_wires: Vec<String>,
+    dff_outputs: Vec<String>,
+    ordered_gates: Vec<Gate>,
     level_map: HashMap<usize, Vec<Gate>>,
+}
+
+pub struct GateCircuit {
+    circuit: Circuit,
+    client_key: ClientKey,
+    server_key: ServerKey,
+}
+
+pub struct LutCircuit {
+    circuit: Circuit,
+    wopbs_shortkey: WopbsKeyShortInt,
+    wopbs_intkey: WopbsKeyInt,
+    client_key: ClientKeyInt,
+    server_intkey: ServerKeyInt,
+}
+
+impl Circuit {
+    pub fn new(
+        gates: HashSet<Gate>, input_wires: Vec<String>, dff_outputs: Vec<String>
+    ) -> Circuit {
+        Circuit {
+            gates: gates,
+            input_wires: input_wires,
+            dff_outputs: dff_outputs,
+            ordered_gates: Vec::new(),
+            level_map: HashMap::new(),
+        }
+    }
+
+    // Topologically sort the gates
+    pub fn sort_circuit(&mut self) {
+        let mut wire_status = HashSet::new();
+
+        self.input_wires.iter().for_each(|input| {
+            wire_status.insert(input.clone());
+        });
+        while !self.gates.is_empty() {
+            self.gates.retain(|gate| {
+                let ready = gate
+                    .get_input_wires()
+                    .iter()
+                    .all(|wire| wire_status.contains(wire));
+
+                if ready {
+                    wire_status.insert(gate.get_output_wire());
+                    self.ordered_gates.push(gate.clone());
+                }
+
+                !ready
+            });
+        }
+    }
+
+    // Sort the gates by level so they can be evaluated later in parallel.
+    pub fn compute_levels(&mut self) {
+        // Initialization of input_wires to true
+        let mut wire_levels = HashMap::new();
+        for input in &self.input_wires {
+            wire_levels.insert(input.to_string(), 0);
+        }
+        
+        for gate in &mut self.ordered_gates {
+            if gate.get_gate_type() == GateType::Dff {
+                match self.level_map.entry(std::usize::MAX) {
+                    Entry::Vacant(e) => { e.insert(vec![gate.clone()]); },
+                    Entry::Occupied(mut e) => { e.get_mut().push(gate.clone()); }
+                }
+                gate.set_level(std::usize::MAX);
+                continue;
+            }
+            // Find the max depth of the input wires
+            let mut depth = 0;
+            gate.get_input_wires().iter().for_each(|input| {
+                let input_depth = match wire_levels.get(input) {
+                    Some(value) => *value,
+                    None => panic!("Input {} not found in wire_map", input),
+                };
+                depth = std::cmp::max(depth, input_depth + 1);
+            });
+
+            gate.set_level(depth);
+            match self.level_map.entry(depth) {
+                Entry::Vacant(e) => { e.insert(vec![gate.clone()]); },
+                Entry::Occupied(mut e) => { e.get_mut().push(gate.clone()); }
+            }
+            wire_levels.insert(gate.get_output_wire(), depth);
+        }
+
+        // Move the DFFs in the correct key spot
+        let total_keys = self.level_map.len();
+        if let Some(values) = self.level_map.remove(&std::usize::MAX) {
+            self.level_map.insert(total_keys, values);
+        }
+        if let Some(gate_vec) = self.level_map.get_mut(&total_keys) {
+            for gate in gate_vec.iter_mut() {
+                gate.set_level(total_keys);
+            }
+        }
+    }
+
+    pub fn initialize_wire_map(
+        &self, 
+        wire_map_im: &HashMap<String, bool>,
+        user_inputs: &HashMap<String, bool>
+    ) -> HashMap<String, bool> {
+        let mut wire_map = wire_map_im.clone();
+        for input_wire in &self.input_wires {
+            // if no inputs are provided, initialize it to false
+            if user_inputs.len() == 0 {
+                wire_map.insert(input_wire.to_string(), false);
+            } else if !user_inputs.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                wire_map.insert(input_wire.to_string(), user_inputs[input_wire]);
+            }
+        }
+        for wire in &self.dff_outputs {
+            wire_map.insert(wire.to_string(), false);
+        }
+
+        wire_map
+    }
+
+    pub fn print_level_map(&self) {
+        for level in self.level_map.keys().sorted() {
+            println!("Level {}:", level);
+            for gate in &self.level_map[level] {
+                println!("  {:?}", gate);
+            }
+        }
+    }
+
+    pub fn evaluate(
+        &mut self, wire_map: &HashMap<String, bool>, cycle: usize
+    ) -> HashMap<String, bool> {
+        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
+            .iter()
+            .enumerate()
+            .map(|(i, (key, &value))| ((key, i), Arc::new(RwLock::new(value))))
+            .unzip();
+    
+        // For each level
+        for (_level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+            // debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
+    
+            // Evaluate all the gates in the level in parallel
+            gates.par_iter_mut().for_each(|gate| {
+                let input_values: Vec<bool> = gate.get_input_wires()
+                    .iter()
+                    .map(|input| {
+                        // Get the corresponding index in the wires array
+                        let index = match key_to_index.get(input) {
+                            Some(&index) => index,
+                            None => panic!("Input wire {} not found in key_to_index map", input),
+                        };
+                        // Read the value of the corresponding key
+                        eval_values[index].read().unwrap().clone()
+                    })
+                    .collect();
+                let output_value = gate.evaluate(&input_values, cycle);
+                // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
+    
+                // Get the corresponding index in the wires array
+                let output_index = key_to_index[&gate.get_output_wire()];
+    
+                // Update the value of the corresponding key
+                *eval_values[output_index].write().unwrap() = output_value;
+            });
+        };
+    
+        key_to_index
+            .iter()
+            .map(|(&key, &index)| {
+                (key.to_string(), eval_values[index].read().unwrap().clone())
+            })
+            .collect::<HashMap<String, bool>>()
+    }
+    
 }
 
 impl GateCircuit {
     pub fn new(
-        server_key: Option<ServerKey>,
-        level_map: HashMap<usize, Vec<Gate>>
+        client_key: ClientKey, server_key: ServerKey, circuit: Circuit
     ) -> GateCircuit {
-        GateCircuit { server_key, level_map }
+        GateCircuit { client_key, server_key, circuit }
     }
-}
-
-// Shift the constant by ctxt amount
-fn eval_luts(x: u64, lut_entry: u64) -> u64 {
-    (lut_entry >> x) & 1
-}
-  
-pub fn generate_lut_radix_helm<F, T>(
-    wk: &WopbsKeyShortInt, ct: &T, f: F, lut_entry: &u64
-) -> Vec<Vec<u64>>
-where
-    F: Fn(u64, u64) -> u64,
-    T: IntegerCiphertext,
-{
-    let mut total_bit = 0;
-    let block_nb = ct.blocks().len();
-    let mut modulus = 1;
-
-    // This contains the basis of each block depending on the degree
-    let mut vec_deg_basis = vec![];
-
-    for (i, deg) in ct.moduli().iter().zip(ct.blocks().iter()) {
-        modulus *= i;
-        let b = f64::log2((deg.degree.0 + 1) as f64).ceil() as u64;
-        vec_deg_basis.push(b);
-        total_bit += b;
-    }
-
-    let mut lut_size = 1 << total_bit;
-    if 1 << total_bit < wk.param.polynomial_size.0 as u64 {
-        lut_size = wk.param.polynomial_size.0;
-    }
-    let mut vec_lut = vec![vec![0; lut_size]; ct.blocks().len()];
-
-    let basis = ct.moduli()[0];
-    let delta = (1 << 63) /
-        (wk.param.message_modulus.0 * wk.param.carry_modulus.0) as u64;
-
-    for lut_index_val in 0..(1 << total_bit) {
-        let encoded_with_deg_val = WopbsInt::encode_mix_radix(lut_index_val, &vec_deg_basis, basis);
-        let decoded_val = WopbsInt::decode_radix(encoded_with_deg_val.clone(), basis as u64);
-        let f_val = f(decoded_val % modulus, *lut_entry) % modulus;
-        let encoded_f_val = WopbsInt::encode_radix(f_val, basis, block_nb as u64);
-        for lut_number in 0..block_nb {
-            vec_lut[lut_number][lut_index_val as usize] = encoded_f_val[lut_number] * delta;
-        }
-    }
-    vec_lut
-}
-  
-pub fn lut(
-    wk_si: &WopbsKeyShortInt,
-    wk: &WopbsKeyInt,
-    sks: &ServerKeyInt,
-    lut_const: &usize,
-    in_ct: &Vec<CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap>>
-) -> CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap> {
-
-    // Combine input ctxts into a radix ctxt
-    let mut combined_vec = vec![];
-    for block in in_ct {
-        combined_vec.insert(0, block.clone());
-    }
-    let radix_ct = 
-        BaseRadixCiphertext::<CiphertextBase::<KeyswitchBootstrap>>::from_blocks(combined_vec);
-
-    // KS to WoPBS 
-    let radix_ct = wk.keyswitch_to_wopbs_params(&sks, &radix_ct);
-
-    // Generate LUT entries from lut_const
-    let lookup_table = generate_lut_radix_helm(&wk_si, &radix_ct, eval_luts, &(*lut_const as u64));
-
-    // Eval PBS
-    let radix_ct = wk.wopbs(&radix_ct, &lookup_table);
-
-    // KS to PBS
-    let radix_ct = wk.keyswitch_to_pbs_params(&radix_ct);
-
-    // Return LSB
-    radix_ct.blocks()[0].clone()
-}
-
-// Topologically sort the gates
-pub fn sort_circuit(gates: &mut HashSet<Gate>, inputs: &Vec<String>) -> Vec<Gate> {
-    let mut sorted: Vec<Gate> = Vec::new();
-    let mut wire_status = HashSet::new();
-
-    inputs.iter().for_each(|input| {
-        wire_status.insert(input.clone());
-    });
-    while !gates.is_empty() {
-        gates.retain(|gate| {
-            let ready = gate
-                .input_wires
-                .iter()
-                .all(|wire| wire_status.contains(wire));
-
-            if ready {
-                wire_status.insert(gate.output_wire.clone());
-                sorted.push(gate.clone());
-            }
-
-            !ready
-        });
-    }
-
-    sorted
-}
-
-
-impl EvalCircuit<Ciphertext> for GateCircuit {
-    fn evaluate(
-        &mut self,
-        wire_map: &HashMap<String, bool>,
-        cycle: usize
-    ) -> HashMap<String, bool> {
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
-            .iter()
-            .enumerate()
-            .map(|(i, (key, &value))| ((key, i), Arc::new(RwLock::new(value))))
-            .unzip();
-
-        // For each level
-        for (_level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
-            // debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
-
-            // Evaluate all the gates in the level in parallel
-            gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<bool> = gate.input_wires
-                    .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not found in key_to_index map", input),
-                        };
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
-                    .collect();
-                let output_value = gate.evaluate(&input_values, cycle);
-                // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
-
-                // Update the value of the corresponding key
-                *eval_values[output_index].write().unwrap() = output_value;
-            });
-        };
-
-        key_to_index
-            .iter()
-            .map(|(&key, &index)| {
-                (key.to_string(), eval_values[index].read().unwrap().clone())
-            })
-            .collect::<HashMap<String, bool>>()
-    }
-
-    fn evaluate_encrypted(
-        &mut self,
-        enc_wire_map: &HashMap<String, Ciphertext>,
-        cycle: usize,
-    ) -> HashMap<String, Ciphertext> {
-        let server_key = self.server_key.as_ref().unwrap();
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
-            .iter()
-            .enumerate()
-            .map(|(i, (key, value))| {
-                ((key, i), Arc::new(RwLock::new(value.clone())))
-            })
-            .unzip();
-
-        // For each level
-        let total_levels = self.level_map.len();
-        for (level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
-            // debug_println!("\n{}) eval_values: {:?}", level, eval_values);
-
-            // Evaluate all the gates in the level in parallel
-            gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<Ciphertext> = gate.input_wires
-                    .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not found in key_to_index map", input),
-                        };
-
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
-                    .collect();
-                let output_value = gate.evaluate_encrypted(&server_key, &input_values, cycle);
-                // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
-
-                // Update the value of the corresponding key
-                *eval_values[output_index].write().unwrap() = output_value;
-            });
-            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
-        };
-
-        key_to_index
-            .iter()
-            .map(|(&key, &index)| {
-                (key.to_string(), eval_values[index].read().unwrap().clone())
-            })
-            .collect()
-    }
-}
-
-pub struct LutCircuit {
-    wopbs_shortkey: WopbsKeyShortInt,
-    wopbs_intkey: WopbsKeyInt,
-    server_intkey: ServerKeyInt,
-    level_map: HashMap<usize, Vec<Gate>>,
 }
 
 impl LutCircuit {
     pub fn new(
-        wopbs_shortkey: WopbsKeyShortInt,
-        wopbs_intkey: WopbsKeyInt,
-        server_intkey: ServerKeyInt,
-        level_map: HashMap<usize, Vec<Gate>>,
+        wopbs_shortkey: WopbsKeyShortInt, wopbs_intkey: WopbsKeyInt,
+        client_key: ClientKeyInt, server_intkey: ServerKeyInt, circuit: Circuit,
     ) -> LutCircuit {
-        LutCircuit { 
-            wopbs_shortkey,
-            wopbs_intkey,
-            server_intkey,
-            level_map,
-        }
+        LutCircuit { wopbs_shortkey, wopbs_intkey, client_key, server_intkey, circuit }
     }
 }
 
-impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
-    fn evaluate(
+impl EvalCircuit<Ciphertext> for GateCircuit {
+    type CtxtType = Ciphertext;
+
+    fn encrypt_inputs(
         &mut self,
-        wire_map: &HashMap<String, bool>,
-        cycle: usize
-    ) -> HashMap<String, bool> {
-
-// TODO: replace with LUTs
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
-            .iter()
-            .enumerate()
-            .map(|(i, (key, &value))| ((key, i), Arc::new(RwLock::new(value))))
-            .unzip();
-
-        // For each level
-        for (_level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
-            // debug_println!("\n{}) eval_values: {:?}", _level, eval_values);
-
-            // Evaluate all the gates in the level in parallel
-            gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<bool> = gate.input_wires
-                    .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not found in key_to_index map", input),
-                        };
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
-                    .collect();
-                let output_value = gate.evaluate(&input_values, cycle);
-                // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
-
-                // Update the value of the corresponding key
-                *eval_values[output_index].write().unwrap() = output_value;
-            });
-        };
-
-        key_to_index
-            .iter()
-            .map(|(&key, &index)| {
-                (key.to_string(), eval_values[index].read().unwrap().clone())
-            })
-            .collect::<HashMap<String, bool>>()
+        wire_map_im: &HashMap<String, bool>,
+        input_wire_map: &HashMap<String, bool>
+    ) -> HashMap<String, Self::CtxtType> {
+        let mut enc_wire_map = HashMap::<String, _>::new();
+        for (wire, &value) in wire_map_im {
+            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(value));
+        }
+        for input_wire in &self.circuit.input_wires {
+            // if no inputs are provided, initialize it to false
+            if input_wire_map.len() == 0 {
+                enc_wire_map.insert(
+                    input_wire.to_string(),
+                    self.client_key.encrypt(false)
+                );
+            } else if !input_wire_map.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                enc_wire_map.insert(
+                    input_wire.to_string(),
+                    self.client_key.encrypt(input_wire_map[input_wire])
+                );
+            }
+        }
+        for wire in &self.circuit.dff_outputs {
+            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(false));
+        }
+        
+        enc_wire_map
     }
 
     fn evaluate_encrypted(
-        &mut self,
-        enc_wire_map: &HashMap<String, CiphertextBase<KeyswitchBootstrap>>,
-        cycle: usize,
-    ) -> HashMap<String, CiphertextBase<KeyswitchBootstrap>> {
+        &mut self, enc_wire_map: &HashMap<String, Self::CtxtType>, cycle: usize,
+    ) -> HashMap<String, Self::CtxtType> {
         let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
             .iter()
             .enumerate()
@@ -375,13 +292,13 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
             .unzip();
 
         // For each level
-        let total_levels = self.level_map.len();
-        for (level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+        let total_levels = self.circuit.level_map.len();
+        for (level, gates) in self.circuit.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
             // debug_println!("\n{}) eval_values: {:?}", level, eval_values);
 
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<CiphertextBase<KeyswitchBootstrap>> = gate.input_wires
+                let input_values: Vec<Self::CtxtType> = gate.get_input_wires()
                     .iter()
                     .map(|input| {
                         // Get the corresponding index in the wires array
@@ -394,8 +311,9 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
                         eval_values[index].read().unwrap().clone()
                     })
                     .collect();
-                let output_value = gate.evaluate_encrypted_lut(&self.wopbs_shortkey, &self.wopbs_intkey, &self.server_intkey, &input_values, cycle);
-                // debug_println!(" {:?} - gate: {:?}", thread::current().id(), gate);
+                let output_value = gate.evaluate_encrypted(
+                    &self.server_key, &input_values, cycle
+                );
 
                 // Get the corresponding index in the wires array
                 let output_index = key_to_index[&gate.get_output_wire()];
@@ -415,245 +333,95 @@ impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
     }
 }
 
-#[derive(Clone)]
-// #[derive(Clone, PartialEq, Hash)]
-pub struct Gate {
-    gate_name: String,
-    gate_type: GateType,
-    input_wires: Vec<String>,
-    lut_const: Option<usize>,
-    output_wire: String,
-    level: usize,
-    cycle: usize,
-    output: Option<bool>,
-    encrypted_output: Option<Ciphertext>,
-    encrypted_lut_output: Option<CiphertextBase<KeyswitchBootstrap>>,
-}
+impl EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit {
+    type CtxtType = CiphertextBase<KeyswitchBootstrap>;
 
-impl Eq for Gate {}
-
-impl PartialEq for Gate {
-    fn eq(&self, other: &Self) -> bool {
-        self.gate_name == other.gate_name
-    }
-}
-
-impl Hash for Gate {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.gate_name.hash(state);
-    }
-}
-
-impl fmt::Debug for Gate {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}({:?}) = {:?}({:?}). Level {}", 
-            self.gate_name,
-            self.output_wire,
-            self.output,
-            self.gate_type,
-            self.input_wires,
-            self.level
-        )
-    }
-}
-
-impl Gate {
-    pub fn new(
-        gate_name: String, 
-        gate_type: GateType,
-        input_wires: Vec<String>,
-        lut_const: Option<usize>,
-        output_wire: String,
-        level: usize
-    ) -> Self {
-        Gate {
-            gate_name,
-            gate_type,
-            input_wires,
-            lut_const,
-            output_wire,
-            level,
-            cycle: 0,
-            output: None,
-            encrypted_output: None,
-            encrypted_lut_output: None,
-        }
-    }
-    
-    pub fn get_output_wire(&self) -> String {
-        self.output_wire.clone()
-    }
-
-    pub fn get_gate_type(&self) -> GateType {
-        self.gate_type.clone()
-    }
-
-    fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
-        if let Some(output) = self.output.clone() {
-            if self.cycle == cycle {
-                return output;
-            }
-        }
-        let output = match self.gate_type {
-            GateType::And => input_values.iter().all(|&v| v),
-            GateType::Dff => input_values[0],
-            GateType::Lut => {
-                let mut shift_amt = 0;
-                let end = input_values.len() - 1;
-                // convert input bits to int:  [1, 1, 0, 1] => 13
-                for input_idx in 0..input_values.len() {
-                    if input_values[input_idx] {
-                        shift_amt += 1 << (end-input_idx);
-                    }
-                }
-                if let Some(lut_const) = self.lut_const {
-                    ((lut_const >> shift_amt) & 1) > 0
-                } else {
-                    panic!("Lut const not provided");
-                }
-            },
-            GateType::Mux => {
-                let select_bit = input_values[2];
-                (select_bit && input_values[0]) || (!select_bit && input_values[1])
-            },
-            GateType::Nand => !input_values.iter().all(|&v| v),
-            GateType::Nor => !input_values.iter().any(|&v| v),
-            GateType::Not => !input_values[0],
-            GateType::Or => input_values.iter().any(|&v| v),
-            GateType::Xnor => input_values.iter().filter(|&&v| v).count() % 2 != 1,
-            GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
-        };
-
-        self.output = Some(output);
-        self.cycle = cycle;
-        output
-    }
-
-    fn evaluate_encrypted_lut(
+    fn encrypt_inputs(
         &mut self,
-        wopbs_shortkey: &WopbsKeyShortInt,
-        wopbs_intkey: &WopbsKeyInt,
-        server_intkey: &ServerKeyInt,
-        input_values: &Vec<CiphertextBase<KeyswitchBootstrap>>,
-        cycle: usize,
-    ) -> CiphertextBase<KeyswitchBootstrap> {
-        if let Some(encrypted_lut_output) = self.encrypted_lut_output.clone() {
-            if self.cycle == cycle {
-                return encrypted_lut_output;
+        wire_map_im: &HashMap<String, bool>,
+        input_wire_map: &HashMap<String, bool>
+    ) -> HashMap<String, Self::CtxtType> {
+        let mut enc_wire_map = HashMap::<String, _>::new();
+        for (wire, &value) in wire_map_im {
+            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt_one_block(value as u64));
+        }
+        for input_wire in &self.circuit.input_wires {
+            // if no inputs are provided, initialize it to false
+            if input_wire_map.len() == 0 {
+                enc_wire_map.insert(
+                    input_wire.to_string(),
+                    self.client_key.encrypt_one_block(0)
+                );
+            } else if !input_wire_map.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                enc_wire_map.insert(
+                    input_wire.to_string(),
+                    self.client_key.encrypt_one_block(input_wire_map[input_wire] as u64)
+                );
             }
         }
-        lut(wopbs_shortkey, wopbs_intkey, server_intkey, &self.lut_const.unwrap(), input_values)
+        for wire in &self.circuit.dff_outputs {
+            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt_one_block(0));
+        }
+        
+        enc_wire_map
     }
-    
+
+
     fn evaluate_encrypted(
         &mut self,
-        server_key: &ServerKey,
-        input_values: &Vec<Ciphertext>,
+        enc_wire_map: &HashMap<String, Self::CtxtType>,
         cycle: usize,
-    ) -> Ciphertext {
-        if let Some(encrypted_output) = self.encrypted_output.clone() {
-            if self.cycle == cycle {
-                return encrypted_output;
-            }
-        }
-        let encrypted_output = match self.gate_type {
-            GateType::And => server_key.
-                and(&input_values[0], &input_values[1]),
-            GateType::Dff => input_values[0].clone(),
-            GateType::Lut => { panic!("Can't mix LUTs with Boolean gates!"); },
-            GateType::Mux => server_key.mux(&input_values[2],
-                &input_values[0], &input_values[1]),
-            GateType::Nand => server_key.
-                nand(&input_values[0], &input_values[1]),
-            GateType::Nor => server_key.
-                nor(&input_values[0], &input_values[1]),
-            GateType::Not => server_key.not(&input_values[0]),
-            GateType::Or => server_key.
-                or(&input_values[0], &input_values[1]),
-            GateType::Xnor => server_key.
-                xnor(&input_values[0], &input_values[1]),
-            GateType::Xor => server_key.
-                xor(&input_values[0], &input_values[1]),
+    ) -> HashMap<String, Self::CtxtType> {
+        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+            .iter()
+            .enumerate()
+            .map(|(i, (key, value))| {
+                ((key, i), Arc::new(RwLock::new(value.clone())))
+            })
+            .unzip();
+
+        // For each level
+        let total_levels = self.circuit.level_map.len();
+        for (level, gates) in self.circuit.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
+            // debug_println!("\n{}) eval_values: {:?}", level, eval_values);
+
+            // Evaluate all the gates in the level in parallel
+            gates.par_iter_mut().for_each(|gate| {
+                let input_values: Vec<Self::CtxtType> = gate.get_input_wires()
+                    .iter()
+                    .map(|input| {
+                        // Get the corresponding index in the wires array
+                        let index = match key_to_index.get(input) {
+                            Some(&index) => index,
+                            None => panic!("Input wire {} not found in key_to_index map", input),
+                        };
+
+                        // Read the value of the corresponding key
+                        eval_values[index].read().unwrap().clone()
+                    })
+                    .collect();
+                let output_value = gate.evaluate_encrypted_lut(
+                    &self.wopbs_shortkey, &self.wopbs_intkey, 
+                    &self.server_intkey, &input_values, cycle
+                );
+
+                // Get the corresponding index in the wires array
+                let output_index = key_to_index[&gate.get_output_wire()];
+
+                // Update the value of the corresponding key
+                *eval_values[output_index].write().unwrap() = output_value;
+            });
+            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         };
 
-        self.encrypted_output = Some(encrypted_output.clone());
-        encrypted_output
-    }
-}
-
-// Sort the gates by level so they can be evaluated later in parallel.
-pub fn compute_levels(
-    gates: &mut Vec<Gate>, inputs: &Vec<String>
-) -> HashMap::<usize, Vec<Gate>> {
-    // Initialization of inputs to true
-    let mut wire_levels = HashMap::new();
-    for input in inputs {
-        wire_levels.insert(input.to_string(), 0);
-    }
-    
-    let mut level_map = HashMap::new();
-    for mut gate in gates {
-        if gate.gate_type == GateType::Dff {
-            match level_map.entry(std::usize::MAX) {
-                Entry::Vacant(e) => { e.insert(vec![(*gate).clone()]); },
-                Entry::Occupied(mut e) => { e.get_mut().push((*gate).clone()); }
-            }
-            gate.level = std::usize::MAX;
-            continue;
-        }
-        // Find the max depth of the input wires
-        let mut depth = 0;
-        gate.input_wires.iter().for_each(|input| {
-            let input_depth = match wire_levels.get(input) {
-                Some(value) => *value,
-                None => panic!("Input {} not found in wire_map", input),
-            };
-            depth = std::cmp::max(depth, input_depth + 1);
-        });
-
-        gate.level = depth;
-        match level_map.entry(depth) {
-            Entry::Vacant(e) => { e.insert(vec![(*gate).clone()]); },
-            Entry::Occupied(mut e) => { e.get_mut().push((*gate).clone()); }
-        }
-        wire_levels.insert(gate.get_output_wire(), depth);
-    }
-
-    // Move the DFFs in the correct key spot
-    let total_keys = level_map.len();
-    if let Some(values) = level_map.remove(&std::usize::MAX) {
-        level_map.insert(total_keys, values);
-    }
-    if let Some(gate_vec) = level_map.get_mut(&total_keys) {
-        for gate in gate_vec.iter_mut() {
-            gate.level = total_keys;
-        }
-    }
-
-    level_map
-}
-
-// Evaluate each gate in topological order
-pub fn _evaluate_circuit_sequentially(
-    gates: &mut Vec<Gate>,
-    wire_map: &mut HashMap<String, bool>,
-    cycle: usize,
-) {
-    for gate in gates {
-        debug_println!("evaluating gate: {:?}", gate);
-
-        let input_values = gate.input_wires
+        key_to_index
             .iter()
-            .map(|input| {
-                match wire_map.get(input) {
-                    Some(input_value) => *input_value,
-                    None => panic!("Input {} not found in wire_map", input),
-                }
+            .map(|(&key, &index)| {
+                (key.to_string(), eval_values[index].read().unwrap().clone())
             })
-            .collect();
-
-        let output_value = gate.evaluate(&input_values, cycle);
-        wire_map.insert(gate.get_output_wire(), output_value);
+            .collect()
     }
 }
 
@@ -735,7 +503,7 @@ fn test_gate_evaluation() {
             for j in 0..2 {
                 let mut inputs_ptxt = vec![ptxts[i], ptxts[i]];
                 let mut inputs_ctxt = vec![ctxts[i].clone(), ctxts[j].clone()];
-                if gate.gate_type == GateType::Mux {
+                if gate.get_gate_type() == GateType::Mux {
                     let select: bool = rng.gen();
                     inputs_ptxt.push(select);
                     inputs_ctxt.push(client_key.encrypt(select));
@@ -745,7 +513,7 @@ fn test_gate_evaluation() {
                 let output_value_enc = gate.evaluate_encrypted(
                     &server_key, &inputs_ctxt, 1
                 );
-                if gate.gate_type == GateType::Lut {
+                if gate.get_gate_type() == GateType::Lut {
                     continue;
                 }
 
@@ -758,22 +526,22 @@ fn test_gate_evaluation() {
 
 #[test]
 fn test_evaluate_circuit_parallel() {
-    let (mut gates_set, mut wire_map, inputs, _, _, _,_) = 
+    let (gates_set, mut wire_map, input_wires, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
-
-    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
-
-    let level_map = compute_levels(&mut ordered_gates, &inputs);
-    for input_wire in &inputs {
+   
+    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    circuit.sort_circuit();
+    circuit.compute_levels();
+    
+    for input_wire in &input_wires {
         wire_map.insert(input_wire.to_string(), true);
     }
 
-    let mut circuit = GateCircuit::new(None, level_map);
-    wire_map = EvalCircuit::evaluate(&mut circuit, &wire_map, 1);
+    wire_map = circuit.evaluate(&wire_map, 1);
 
-    assert_eq!(ordered_gates.len(), 10);
+    assert_eq!(circuit.ordered_gates.len(), 10);
     assert_eq!(wire_map.len(), 15);
-    assert_eq!(inputs.len(), 5);
+    assert_eq!(input_wires.len(), 5);
 
     assert_eq!(wire_map["sum[0]"], true);
     assert_eq!(wire_map["sum[1]"], true);
@@ -784,30 +552,31 @@ fn test_evaluate_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
-    let (mut gates_set, wire_map_im, inputs, _, _, _,_) = 
+    let (gates_set, wire_map_im, input_wires, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
-    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
+    let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    circuit.sort_circuit();
+    circuit.compute_levels();
 
     // Encrypted
     let (client_key, server_key) = gen_keys();
-    let level_map = compute_levels(&mut ordered_gates, &inputs);
     
     // Plaintext
-    for input_wire in &inputs {
+    for input_wire in &input_wires {
         ptxt_wire_map.insert(input_wire.to_string(), true);
     }
-    let mut circuit = GateCircuit::new(Some(server_key), level_map);
-    ptxt_wire_map = EvalCircuit::evaluate(&mut circuit, &ptxt_wire_map, 1);
-
+    ptxt_wire_map = circuit.evaluate(&ptxt_wire_map, 1);
+    
     let mut enc_wire_map = HashMap::new();
     for (wire, value) in wire_map_im {
         enc_wire_map.insert(wire, client_key.encrypt(value));
     }
-    for input_wire in &inputs {
+    for input_wire in &input_wires {
         enc_wire_map.insert(input_wire.to_string(), client_key.encrypt(true));
     }
+    let mut circuit = GateCircuit::new(client_key.clone(), server_key, circuit);
     enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
     
     let mut dec_wire_map = HashMap::new();
@@ -823,41 +592,41 @@ fn test_evaluate_encrypted_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
-    let (mut gates_set, wire_map_im, inputs, _, _, _,_) = 
+    let (gates_set, wire_map_im, input_wires, _, _, _,_) = 
         crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
-    let mut ordered_gates = sort_circuit(&mut gates_set, &inputs);
+    let mut circuit_ptxt = Circuit::new(gates_set, input_wires.clone(), vec![]);
+    circuit_ptxt.sort_circuit();
+    circuit_ptxt.compute_levels();
 
     // Encrypted
-    let (cks_shortint, sks_shortint) = tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
-    let cks = ClientKeyInt::from(cks_shortint.clone());
-    let sks = ServerKeyInt::from_shortint(&cks, sks_shortint.clone());
+    let (client_key_shortint, server_key_shortint) = tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
+    let client_key = ClientKeyInt::from(client_key_shortint.clone());
+    let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
 
-    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_1);
+    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&client_key_shortint, &server_key_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_1);
     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
-    let level_map = compute_levels(&mut ordered_gates, &inputs);
-    
     // Plaintext
-    for input_wire in &inputs {
+    for input_wire in &input_wires {
         ptxt_wire_map.insert(input_wire.to_string(), true);
     }
-    let mut circuit = LutCircuit::new(wopbs_key_shortint, wopbs_key, sks, level_map);
-    ptxt_wire_map = EvalCircuit::evaluate(&mut circuit, &ptxt_wire_map, 1);
-
+    ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map, 1);
+    
     let mut enc_wire_map = HashMap::new();
     for (wire, value) in wire_map_im {
-        enc_wire_map.insert(wire, cks.encrypt_one_block(value as u64));
+        enc_wire_map.insert(wire, client_key.encrypt_one_block(value as u64));
     }
-    for input_wire in &inputs {
-        enc_wire_map.insert(input_wire.to_string(), cks.encrypt_one_block(1));
+    for input_wire in &input_wires {
+        enc_wire_map.insert(input_wire.to_string(), client_key.encrypt_one_block(1));
     }
+    let mut circuit = LutCircuit::new(wopbs_key_shortint, wopbs_key, client_key.clone(), server_key, circuit_ptxt);
     enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
     
     let mut dec_wire_map = HashMap::new();
     for wire_name in enc_wire_map.keys().sorted() {
-        dec_wire_map.insert(wire_name.to_string(), cks.decrypt_one_block(&enc_wire_map[wire_name]));
+        dec_wire_map.insert(wire_name.to_string(), client_key.decrypt_one_block(&enc_wire_map[wire_name]));
     }
 
     // Check that encrypted and plaintext evaluations are equal

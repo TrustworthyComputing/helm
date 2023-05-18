@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::collections::{HashMap, HashSet};
 use csv::Reader;
 
-use crate::circuit::{Gate, GateType};
+use crate::gates::{Gate, GateType};
 
 fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_type = match tokens[0] {
