@@ -81,14 +81,25 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
 fn main() {
     ascii::print_art();
     let (file_name, num_cycles, verbose, input_wire_map) = parse_args();
-    let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts) = 
-        verilog_parser::read_verilog_file(&file_name);
-    
+    let (gates_set, wire_map_im, input_wires, output_wires, 
+         dff_outputs, is_sequential, has_luts) = 
+            verilog_parser::read_verilog_file(&file_name);
+
     if num_cycles > 1 && !is_sequential {
-        panic!("Cannot run combinational circuit for more than one cycles.");
+        panic!("{}[!]{} Cannot run combinational circuit for more than one cycles.", 
+            color::Fg(color::LightRed), color::Fg(color::Reset)
+        );
+    }
+    if gates_set.len() == 0 {
+        panic!("{}[!]{} Parser error, no gates detected. Make sure to use the \
+            'no-expr' flag in Yosys.", 
+            color::Fg(color::LightRed), color::Fg(color::Reset)
+        );
     }
 
-    let mut circuit_ptxt = circuit::Circuit::new(gates_set, input_wires, output_wires, dff_outputs.clone());
+    let mut circuit_ptxt = circuit::Circuit::new(
+        gates_set, input_wires, output_wires, dff_outputs.clone()
+    );
 
     circuit_ptxt.sort_circuit();
     circuit_ptxt.compute_levels();
@@ -97,7 +108,9 @@ fn main() {
     debug_println!();
 
     // Initialization of inputs
-    let mut wire_map = circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map);
+    let mut wire_map = circuit_ptxt.initialize_wire_map(
+        &wire_map_im, &input_wire_map
+    );
     debug_println!("before eval wire_map: {:?}", wire_map);
 
     // Plaintext evaluation
@@ -119,7 +132,9 @@ fn main() {
         let (client_key, server_key) = gen_keys();
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
     
-        let mut circuit = circuit::GateCircuit::new(client_key.clone(), server_key, circuit_ptxt);
+        let mut circuit = circuit::GateCircuit::new(
+            client_key, server_key, circuit_ptxt
+        );
 
         // Client encrypts their inputs
         start = Instant::now();
@@ -146,9 +161,13 @@ fn main() {
     } else { // LUT mode
         let mut start = Instant::now();
         let (client_key_shortint, server_key_shortint) = 
-            tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_0); // single bit ctxt
+            tfhe::shortint::gen_keys(
+                PARAM_MESSAGE_1_CARRY_0 // single bit ctxt
+            );
         let client_key = ClientKeyInt::from(client_key_shortint.clone());
-        let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
+        let server_key = ServerKeyInt::from_shortint(
+            &client_key, server_key_shortint.clone()
+        );
         let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
             &client_key_shortint, &server_key_shortint,
             &&WOPBS_PARAM_MESSAGE_1_CARRY_0
@@ -157,7 +176,7 @@ fn main() {
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
         let mut circuit = circuit::LutCircuit::new(
-            wopbs_key_shortint, wopbs_key, client_key.clone(), server_key, circuit_ptxt
+            wopbs_key_shortint, wopbs_key, client_key, server_key, circuit_ptxt
         );
 
         // Client encrypts their inputs
