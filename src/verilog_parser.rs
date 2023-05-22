@@ -1,7 +1,7 @@
+use csv::Reader;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::{HashMap, HashSet};
-use csv::Reader;
 
 use crate::gates::{Gate, GateType};
 
@@ -27,20 +27,22 @@ fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_name = String::from(name_and_inputs[0]);
 
     let (mut input_wires, output_wire) = match gate_type {
-        GateType::Not | GateType::Dff => {
-            (
-                vec![String::from(name_and_inputs[1].trim())], 
-                String::from(tokens[2].trim_end_matches(';').trim_end_matches(')'))
-            )
-        },
+        GateType::Not | GateType::Dff => (
+            vec![String::from(name_and_inputs[1].trim())],
+            String::from(tokens[2].trim_end_matches(';').trim_end_matches(')')),
+        ),
         GateType::Mux | GateType::Lut => {
             let mut input_wires = vec![String::from(name_and_inputs[1])];
-            for i in 2..(tokens.len()-1) {
-                input_wires.push(tokens[i].trim_end_matches(',').trim().to_owned());
+            for token in tokens.iter().take(tokens.len() - 1).skip(2) {
+                input_wires.push(token.trim_end_matches(',').trim().to_owned());
             }
-            let output_wire = String::from(tokens[tokens.len()-1].trim_end_matches(';').trim_end_matches(')'));
+            let output_wire = String::from(
+                tokens[tokens.len() - 1]
+                    .trim_end_matches(';')
+                    .trim_end_matches(')'),
+            );
             (input_wires, output_wire)
-        },
+        }
         _ => {
             let mut input_wires = vec![String::from(name_and_inputs[1])];
             input_wires.push(tokens[2].trim_end_matches(',').trim().to_owned());
@@ -53,10 +55,12 @@ fn parse_gate(tokens: &[&str]) -> Gate {
     if gate_type == GateType::Lut {
         let lut_const_str = input_wires.remove(0);
         if lut_const_str.starts_with("0x") {
-            lut_const = Some(match usize::from_str_radix(&lut_const_str.trim_start_matches("0x"), 16) {
-                Ok(n) => n,
-                Err(_) => panic!("Failed to parse hex"),
-            });
+            lut_const = Some(
+                match usize::from_str_radix(lut_const_str.trim_start_matches("0x"), 16) {
+                    Ok(n) => n,
+                    Err(_) => panic!("Failed to parse hex"),
+                },
+            );
         } else {
             lut_const = Some(match lut_const_str.parse::<usize>() {
                 Ok(n) => n,
@@ -71,9 +75,10 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
     let trimmed = range_str.trim_matches(|c| c == '[' || c == ']');
     if let Some(tokens) = trimmed.split(':').collect::<Vec<_>>().get(..) {
         let first = tokens[0].parse::<usize>().ok()?;
-        let second = tokens.get(1).map(
-            |t| t.parse::<usize>().ok()
-        ).flatten().unwrap_or(first);
+        let second = tokens
+            .get(1)
+            .and_then(|t| t.parse::<usize>().ok())
+            .unwrap_or(first);
         let start = std::cmp::min(first, second);
         let end = std::cmp::max(first, second);
         return Some((start, end));
@@ -83,8 +88,16 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
 }
 
 pub fn read_verilog_file(
-    file_name: &str
-) -> (HashSet<Gate>, HashMap<String, bool>, Vec<String>, Vec<String>, Vec<String>, bool, bool) {
+    file_name: &str,
+) -> (
+    HashSet<Gate>,
+    HashMap<String, bool>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    bool,
+    bool,
+) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
@@ -99,54 +112,74 @@ pub fn read_verilog_file(
     for line in reader.lines() {
         let line = line.expect("Failed to read line").trim().to_owned();
 
-        if line.is_empty() || line.starts_with("module") || 
-            line.starts_with("endmodule") || line.starts_with("//") {
+        if line.is_empty()
+            || line.starts_with("module")
+            || line.starts_with("endmodule")
+            || line.starts_with("//")
+        {
             continue;
         }
 
-        let tokens: Vec<&str> = line.split([',', ' '].as_ref()).filter(|s| !s.is_empty()).collect();
+        let tokens: Vec<&str> = line
+            .split([',', ' '].as_ref())
+            .filter(|s| !s.is_empty())
+            .collect();
         match tokens[0] {
             "input" => {
                 if let Some((start, end)) = parse_range(tokens[1]) {
                     let input_name = tokens[2].trim_matches(',').trim_end_matches(';');
-                    inputs.extend((start..end+1).map(|i| format!("{}[{}]", input_name, i)));
+                    inputs.extend((start..end + 1).map(|i| format!("{}[{}]", input_name, i)));
                 } else {
-                    inputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
+                    inputs.extend(
+                        tokens[1..]
+                            .iter()
+                            .map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()),
+                    );
                 }
-            },
+            }
             "output" => {
                 if let Some((start, end)) = parse_range(tokens[1]) {
                     let output_name = tokens[2].trim_matches(',').trim_end_matches(';');
-                    outputs.extend((start..end+1).map(|i| format!("{}[{}]", output_name, i)));
+                    outputs.extend((start..end + 1).map(|i| format!("{}[{}]", output_name, i)));
                 } else {
-                    outputs.extend(tokens[1..].iter().map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()));
+                    outputs.extend(
+                        tokens[1..]
+                            .iter()
+                            .map(|t| t.trim_matches(',').trim_end_matches(';').to_owned()),
+                    );
                 }
-            },
+            }
             "wire" => {
-                for i in 1..tokens.len() {
-                    _wires.push(String::from(
-                        tokens[i].trim_matches(',').trim_end_matches(';')
-                    ));
+                for token in tokens.iter().skip(1) {
+                    _wires.push(String::from(token.trim_matches(',').trim_end_matches(';')));
                 }
-            },
-            _ => { // Gate
+            }
+            _ => {
+                // Gate
                 let gate = parse_gate(&tokens);
                 if gate.get_gate_type() == GateType::Dff {
                     is_sequential = true;
                     wire_map.insert(gate.get_output_wire(), false);
                     inputs.push(gate.get_output_wire());
                     dff_outputs.push(gate.get_output_wire());
-                }
-                else if gate.get_gate_type() == GateType::Lut {
+                } else if gate.get_gate_type() == GateType::Lut {
                     has_luts = true;
                 }
                 wire_map.insert(gate.get_output_wire(), false);
                 gates.insert(gate);
-            },
+            }
         }
     }
 
-    (gates, wire_map, inputs, outputs, dff_outputs, is_sequential, has_luts)
+    (
+        gates,
+        wire_map,
+        inputs,
+        outputs,
+        dff_outputs,
+        is_sequential,
+        has_luts,
+    )
 }
 
 pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
@@ -160,11 +193,11 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
             assert_eq!(record.len(), 2);
 
             (
-                record[0].trim().to_string(), 
-                record[1].trim().to_string().parse::<bool>().unwrap()
+                record[0].trim().to_string(),
+                record[1].trim().to_string().parse::<bool>().unwrap(),
             )
         };
-        
+
         input_map.insert(input_wire, init_value);
     }
 
@@ -173,7 +206,7 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) = 
+    let (gates, wire_map, inputs, _, _, _, _) =
         read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
     assert_eq!(gates.len(), 10);
@@ -183,15 +216,12 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) = 
-        read_verilog_file("verilog-files/netlists/2bit_adder.v");
+    let (_, _, inputs, _, _, _, _) = read_verilog_file("verilog-files/netlists/2bit_adder.v");
 
-    let input_wires_map = 
-        read_input_wires("verilog-files/inputs/2bit_adder.input.csv");
+    let input_wires_map = read_input_wires("verilog-files/inputs/2bit_adder.input.csv");
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {
         assert!(input_wires_map.contains_key(&input_wire));
     }
 }
-
