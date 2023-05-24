@@ -16,7 +16,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+
+    - name: Pull & update submodules recursively
+      run: |
+          git submodule update --init --recursive
+          git submodule update --recursive --remote
+
     - name: Build
       run: cargo build --release --verbose
+
     - name: Run tests
       run: cargo test --release --verbose

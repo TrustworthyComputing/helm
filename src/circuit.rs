@@ -594,7 +594,7 @@ fn test_gate_evaluation() {
 #[test]
 fn test_evaluate_circuit_parallel() {
     let (gates_set, mut wire_map, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);
     circuit.sort_circuit();
@@ -620,7 +620,7 @@ fn test_evaluate_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     let mut circuit = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);
@@ -663,7 +663,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/8-bit-adder-lut.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     let mut circuit_ptxt = Circuit::new(gates_set, input_wires.clone(), vec![], vec![]);

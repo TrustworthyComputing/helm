@@ -7,20 +7,35 @@
 HELM is a framework for evaluating synthesizable HDL designs in the encrypted 
 domain that is designed for multi-core CPU evaluation. Users can choose between
 evaluating circuits composed of standard Boolean gates or low-precision LUTs. In 
-either case, both sequential and combinational circuits are supported. 
+either case, both sequential and combinational circuits are supported.
 
+### Clone the repository
+```shell
+git clone --recurse-submodules git@github.com:TrustworthyComputing/helm.git 
+```
+
+### Build & Run
 ```shell
 cargo build --release
 cargo test --release
-cargo run --bin preprocessor --release -- --input ./verilog-files/netlists/s27.v
-cargo run --bin helm --release -- --input ./verilog-files/netlists/s27.out.v
-cargo run --bin helm --release -- --input ./verilog-files/netlists/2bit_adder.v --wires ./verilog-files/inputs/2bit_adder.input.csv
+cargo run --bin helm --release -- \
+    --input ./hdl-benchmarks/processed-netlists/s27.v
+cargo run --bin helm --release -- \
+    --input ./hdl-benchmarks/processed-netlists/2-bit-adder.v \
+    --wires ./hdl-benchmarks/test-cases/2-bit-adder.inputs.csv
 ```
 
-## Example of an ISCAS'85 circuit
+### Example of an ISCAS'85 circuit
+If a circuit is in the [netlists](./hdl-benchmarks/netlists/) directory but not
+in the [processed-netlists](./hdl-benchmarks/processed-netlists/), run the
+preprocessor and then helm as following:
+
 ```shell
-cargo run --bin preprocessor --release -- --input ./verilog-files/netlists/c880.v
-cargo run --bin helm --release -- --input ./verilog-files/netlists/c880.out.v
+cargo run --bin preprocessor --release  \
+    --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+    --input ./hdl-benchmarks/netlists/c880.v \
+    --output ./hdl-benchmarks/processed-netlists/c880.v
+cargo run --bin helm --release -- --input ./hdl-benchmarks/processed-netlists/c880.v
 ```
 
 <p align="center">
