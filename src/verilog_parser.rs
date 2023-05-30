@@ -44,8 +44,8 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         ),
         GateType::Mux | GateType::Lut => {
             let mut input_wires = vec![String::from(name_and_inputs[1])];
-            for i in 2..(tokens.len() - 1) {
-                input_wires.push(tokens[i].trim_end_matches(',').trim().to_owned());
+            for token in tokens.iter().take(tokens.len() - 1).skip(2) {
+                input_wires.push(token.trim_end_matches(',').trim().to_owned());
             }
             let output_wire = String::from(
                 tokens[tokens.len() - 1]
@@ -99,8 +99,7 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
         let first = tokens[0].parse::<usize>().ok()?;
         let second = tokens
             .get(1)
-            .map(|t| t.parse::<usize>().ok())
-            .flatten()
+            .and_then(|t| t.parse::<usize>().ok())
             .unwrap_or(first);
         let start = std::cmp::min(first, second);
         let end = std::cmp::max(first, second);
@@ -173,10 +172,8 @@ pub fn read_verilog_file(
                 }
             }
             "wire" => {
-                for i in 1..tokens.len() {
-                    _wires.push(String::from(
-                        tokens[i].trim_matches(',').trim_end_matches(';'),
-                    ));
+                for token in tokens.iter().skip(1) {
+                    _wires.push(String::from(token.trim_matches(',').trim_end_matches(';')));
                 }
             }
             _ => {
@@ -231,8 +228,9 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) =
-        read_verilog_file("verilog-files/netlists/2bit_adder.v");
+    let (gates, wire_map, inputs, _, _, _, _) = read_verilog_file(
+        "hdl-benchmarks/processed-netlists/2-bit-adder.v"
+    );
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
@@ -241,9 +239,13 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) = read_verilog_file("verilog-files/netlists/2bit_adder.v");
+    let (_, _, inputs, _, _, _, _) = read_verilog_file(
+        "hdl-benchmarks/processed-netlists/2-bit-adder.v"
+    );
 
-    let input_wires_map = read_input_wires("verilog-files/inputs/2bit_adder.input.csv");
+    let input_wires_map = read_input_wires(
+        "hdl-benchmarks/test-cases/2-bit-adder.inputs.csv"
+    );
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {

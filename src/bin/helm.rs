@@ -10,7 +10,7 @@ use tfhe::{
     },
     shortint::{
         parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_2, PARAM_MESSAGE_1_CARRY_2,
+            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_1_CARRY_1,
         },
         wopbs::WopbsKey as WopbsKeyShortInt,
     },
@@ -68,7 +68,7 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>, bool) {
         if matches.contains_id("wires") {
             let input_wires_file = matches.get_one::<String>("wires").unwrap();
 
-            verilog_parser::read_input_wires(&input_wires_file)
+            verilog_parser::read_input_wires(input_wires_file)
         } else {
             println!(
                 "{}[!]{} No CSV file provided for the input wires, 
@@ -97,11 +97,20 @@ fn main() {
         verilog_parser::read_verilog_file(&file_name);
 
     if num_cycles > 1 && !is_sequential {
-        panic!("Cannot run combinational circuit for more than one cycles.");
+        panic!(
+            "{}[!]{} Cannot run combinational circuit for more than one cycles.",
+            color::Fg(color::LightRed),
+            color::Fg(color::Reset)
+        );
     }
-
-    #[cfg(debug_assertions)]
-    let output_wires_clone = output_wires.clone();
+    if gates_set.is_empty() {
+        panic!(
+            "{}[!]{} Parser error, no gates detected. Make sure to use the \
+            'no-expr' flag in Yosys.",
+            color::Fg(color::LightRed),
+            color::Fg(color::Reset)
+        );
+    }
 
     let mut circuit_ptxt =
         circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
@@ -127,7 +136,7 @@ fn main() {
         println!("Cycle {}) Evaluation:", cycle);
 
         #[cfg(debug_assertions)]
-        for wire_name in &output_wires_clone {
+        for wire_name in &output_wires {
             println!(" {}: {}", wire_name, wire_map[wire_name]);
         }
         #[cfg(debug_assertions)]
@@ -141,7 +150,8 @@ fn main() {
         let (client_key, server_key) = gen_keys();
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
-        let mut circuit = circuit::GateCircuit::new(client_key.clone(), server_key, circuit_ptxt);
+        // let mut circuit = circuit::GateCircuit::new(client_key.clone(), server_key, circuit_ptxt);
+        let mut circuit = circuit::GateCircuit::new(client_key, server_key, circuit_ptxt);
 
         // Client encrypts their inputs
         start = Instant::now();
@@ -174,13 +184,13 @@ fn main() {
         // LUT mode
         let mut start = Instant::now();
         let (client_key_shortint, server_key_shortint) =
-            tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_2); // single bit ctxt
+            tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
         let client_key = ClientKeyInt::from(client_key_shortint.clone());
         let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
         let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
             &client_key_shortint,
             &server_key_shortint,
-            &&WOPBS_PARAM_MESSAGE_1_CARRY_2,
+            &&WOPBS_PARAM_MESSAGE_1_CARRY_1,
         );
         let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());

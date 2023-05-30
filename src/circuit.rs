@@ -27,7 +27,6 @@ use tfhe::shortint::parameters::{
     parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_1_CARRY_1,
 };
 
-
 pub trait EvalCircuit<T> {
     type CtxtType;
 
@@ -78,10 +77,10 @@ impl<'a> Circuit<'a> {
         dff_outputs: &'a Vec<String>,
     ) -> Circuit<'a> {
         Circuit {
-            gates: gates,
-            input_wires: input_wires,
-            output_wires: output_wires,
-            dff_outputs: dff_outputs,
+            gates,
+            input_wires,
+            output_wires,
+            dff_outputs,
             ordered_gates: Vec::new(),
             level_map: HashMap::new(),
         }
@@ -167,6 +166,19 @@ impl<'a> Circuit<'a> {
             }
         }
 
+        let all_gates_present = self.ordered_gates.iter().all(|gate| {
+            partitions.iter().any(|partition| partition.contains(gate))
+        });
+        
+        if all_gates_present {
+            println!("All gates are present in partitions.");
+        } else {
+            println!("Some gates are not present in partitions.");
+        }
+        
+        // Delete Boolean gates, we have them in partitions now.
+        self.ordered_gates.clear();
+
         partitions
     }
 
@@ -216,9 +228,7 @@ impl<'a> Circuit<'a> {
     pub fn partitions_to_lut_circuit(&mut self, partitions: &Vec<Vec<Gate>>) {
         // Make sure the sort circuit function has run.
         assert!(self.gates.is_empty());
-
-        // Delete Boolean gates, we have them in partitions now.
-        self.ordered_gates.clear();
+        assert!(self.ordered_gates.is_empty());
     
         // Generate one LUT for each partition
         for (counter, partition) in partitions.iter().enumerate() {
@@ -241,13 +251,14 @@ impl<'a> Circuit<'a> {
     pub fn compute_levels(&mut self) {
         // Make sure the sort circuit function has run.
         assert!(self.gates.is_empty());
+        assert!(!self.ordered_gates.is_empty());
 
         // Initialization of input_wires to true
         let mut wire_levels = HashMap::new();
         for input in self.input_wires {
             wire_levels.insert(input.to_string(), 0);
         }
-        dbg!(&wire_levels);
+
         for gate in &mut self.ordered_gates {
             if gate.get_gate_type() == GateType::Dff {
                 match self.level_map.entry(std::usize::MAX) {
@@ -365,7 +376,7 @@ impl<'a> Circuit<'a> {
                             None => panic!("Input wire {} not found in key_to_index map", input),
                         };
                         // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
+                        *eval_values[index].read().unwrap()
                     })
                     .collect();
                 let output_value = gate.evaluate(&input_values, cycle);
@@ -381,7 +392,7 @@ impl<'a> Circuit<'a> {
 
         key_to_index
             .iter()
-            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
+            .map(|(&key, &index)| (key.to_string(), *eval_values[index].read().unwrap()))
             .collect::<HashMap<String, bool>>()
     }
 }
@@ -428,7 +439,7 @@ impl<'a> EvalCircuit<Ciphertext> for GateCircuit<'a> {
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.len() == 0 {
+            if input_wire_map.is_empty() {
                 enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt(false));
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
@@ -542,7 +553,7 @@ impl<'a> EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit<'a> {
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.len() == 0 {
+            if input_wire_map.is_empty() {
                 enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt_one_block(0));
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
@@ -766,20 +777,19 @@ fn test_gate_evaluation() {
 #[test]
 fn test_evaluate_circuit_parallel() {
     let (gates_set, mut wire_map, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     let empty = vec![];
     let mut circuit = Circuit::new(gates_set, &input_wires, &empty, &empty);
     circuit.sort_circuit();
+    assert_eq!(circuit.ordered_gates.len(), 10);
     circuit.compute_levels();
 
     for input_wire in &input_wires {
         wire_map.insert(input_wire.to_string(), true);
     }
-
     wire_map = circuit.evaluate(&wire_map, 1);
 
-    assert_eq!(circuit.ordered_gates.len(), 10);
     assert_eq!(wire_map.len(), 15);
     assert_eq!(input_wires.len(), 5);
 
@@ -793,7 +803,7 @@ fn test_evaluate_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/2bit_adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     let empty = vec![];
@@ -837,7 +847,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("verilog-files/netlists/8bit-adder-lut.out.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/8-bit-adder-lut.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
     let empty = vec![];

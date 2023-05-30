@@ -116,7 +116,7 @@ impl Gate {
     }
 
     pub fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
-        if let Some(output) = self.output.clone() {
+        if let Some(output) = self.output {
             if self.cycle == cycle {
                 return output;
             }
@@ -128,8 +128,8 @@ impl Gate {
                 let mut shift_amt = 0;
                 let end = input_values.len() - 1;
                 // convert input bits to int:  [1, 1, 0, 1] => 13
-                for input_idx in 0..input_values.len() {
-                    if input_values[input_idx] {
+                for (input_idx, &input_val) in input_values.iter().enumerate() {
+                    if input_val {
                         shift_amt += 1 << (end - input_idx);
                     }
                 }
@@ -173,7 +173,7 @@ impl Gate {
             wopbs_shortkey,
             wopbs_intkey,
             server_intkey,
-            &self.lut_const.as_ref().unwrap(),
+            &self.lut_const.as_mut().unwrap(),
             input_values,
         )
     }
@@ -181,7 +181,7 @@ impl Gate {
     pub fn evaluate_encrypted(
         &mut self,
         server_key: &ServerKey,
-        input_values: &Vec<Ciphertext>,
+        input_values: &[Ciphertext],
         cycle: usize,
     ) -> Ciphertext {
         if let Some(encrypted_output) = self.encrypted_output.clone() {
@@ -229,6 +229,8 @@ pub fn lut(
 
     // Generate LUT entries from lut_const
     let lut = generate_lut_radix_helm(&wk_si, &radix_ct, eval_luts, lut_const);
+// TODO
+    // let lut = generate_lut_radix_helm(wk_si, &radix_ct, eval_luts, &(*lut_const as u64));
 
     // Eval PBS
     let radix_ct = wk.wopbs(&radix_ct, &lut);
@@ -280,7 +282,7 @@ where
 
     for lut_index_val in 0..(1 << total_bit) {
         let encoded_with_deg_val = WopbsInt::encode_mix_radix(lut_index_val, &vec_deg_basis, basis);
-        let decoded_val = WopbsInt::decode_radix(encoded_with_deg_val.clone(), basis as u64);
+        let decoded_val = WopbsInt::decode_radix(encoded_with_deg_val.clone(), basis);
         let f_val = f(decoded_val % modulus, lut_entry) % modulus;
         let encoded_f_val = WopbsInt::encode_radix(f_val, basis, block_nb as u64);
         for lut_number in 0..block_nb {

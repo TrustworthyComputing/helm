@@ -1,0 +1,4 @@
+[submodule "hdl-benchmarks"]
+	path = hdl-benchmarks
+	url = https://github.com/TrustworthyComputing/hdl-benchmarks.git
+	branch = main
