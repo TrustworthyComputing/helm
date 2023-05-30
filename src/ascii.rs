@@ -21,7 +21,7 @@ pub fn print_art() {
                     KM            KKM
     "#;
 
-    let mut color_iter = [ "black", "yellow" ].iter().cycle();
+    let mut color_iter = ["black", "yellow"].iter().cycle();
     for c in art.chars() {
         if c == '9' {
             match *color_iter.next().unwrap() {

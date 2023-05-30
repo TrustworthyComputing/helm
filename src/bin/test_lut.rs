@@ -1,29 +1,24 @@
 use std::time::Instant;
 use tfhe::{
     integer::{
-        ciphertext::BaseRadixCiphertext,
-        ClientKey as ClientKeyInt,
-        IntegerCiphertext,
-        ServerKey as ServerKeyInt,
-        wopbs as WopbsInt,
-        wopbs::WopbsKey as WopbsKeyInt,
+        ciphertext::BaseRadixCiphertext, wopbs as WopbsInt, wopbs::WopbsKey as WopbsKeyInt,
+        ClientKey as ClientKeyInt, IntegerCiphertext, ServerKey as ServerKeyInt,
     },
     shortint as ShortInt,
     shortint::{
-        ciphertext::{
-            CiphertextBase, 
-            KeyswitchBootstrap,
-        },
+        ciphertext::{CiphertextBase, KeyswitchBootstrap},
         parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1,
-            PARAM_MESSAGE_1_CARRY_1,
+            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_1_CARRY_1,
         },
         wopbs::WopbsKey as WopbsKeyShortInt,
     },
 };
 
 pub fn generate_lut_radix_helm<F, T>(
-    wk: &WopbsKeyShortInt, ct: &T, f: F, lut_entries: &Vec<u64>
+    wk: &WopbsKeyShortInt,
+    ct: &T,
+    f: F,
+    lut_entries: &Vec<u64>,
 ) -> Vec<Vec<u64>>
 where
     F: Fn(u64, &Vec<u64>) -> u64,
@@ -50,9 +45,7 @@ where
     let mut vec_lut = vec![vec![0; lut_size]; ct.blocks().len()];
 
     let basis = ct.moduli()[0];
-    let delta: u64 = (1 << 63)
-        / (wk.param.message_modulus.0 * wk.param.carry_modulus.0)
-            as u64;
+    let delta: u64 = (1 << 63) / (wk.param.message_modulus.0 * wk.param.carry_modulus.0) as u64;
 
     for lut_index_val in 0..(1 << total_bit) {
         let encoded_with_deg_val = WopbsInt::encode_mix_radix(lut_index_val, &vec_deg_basis, basis);
@@ -67,7 +60,7 @@ where
 }
 
 // Shift the constant by ctxt amount
-fn eval_luts(x: u64, lut_entries: &Vec<u64>) -> u64{
+fn eval_luts(x: u64, lut_entries: &Vec<u64>) -> u64 {
     ((lut_entries[0] >> x) & 1) + (((lut_entries[1] >> x) & 1) << 1)
 }
 
@@ -77,7 +70,11 @@ fn main() {
     let cks = ClientKeyInt::from(cks_shortint.clone());
     let sks = ServerKeyInt::from_shortint(&cks, sks_shortint.clone());
 
-    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(&cks_shortint, &sks_shortint, &WOPBS_PARAM_MESSAGE_1_CARRY_1);
+    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
+        &cks_shortint,
+        &sks_shortint,
+        &WOPBS_PARAM_MESSAGE_1_CARRY_1,
+    );
     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
     let nb_block = 6;
@@ -88,12 +85,15 @@ fn main() {
     let lut_entries = vec![0xf880077f077ff880u64, 0xcca18122c0aedabd];
 
     let clear = 12;
-    let ct = cks.encrypt_radix(clear as u64, nb_block);
+    let ct = cks.encrypt_radix(clear, nb_block);
     let ct = wopbs_key.keyswitch_to_wopbs_params(&sks, &ct);
     let mut start = Instant::now();
     // let lut = wopbs_key.generate_lut_radix(&ct, eval_luts);
     let lut = generate_lut_radix_helm(&wopbs_key_shortint, &ct, eval_luts, &lut_entries);
-    println!("Generate LUT radix: {} seconds.", start.elapsed().as_secs_f64());
+    println!(
+        "Generate LUT radix: {} seconds.",
+        start.elapsed().as_secs_f64()
+    );
     start = Instant::now();
     let ct_res = wopbs_key.wopbs(&ct, &lut);
     println!("Compute PBS: {} seconds.", start.elapsed().as_secs_f64());
@@ -101,8 +101,8 @@ fn main() {
     for block in ct_res.blocks().iter() {
         combined_vec.insert(0, block.clone());
     }
-    let mut enc_bit_rev = 
-        BaseRadixCiphertext::<CiphertextBase::<KeyswitchBootstrap>>::from_blocks(combined_vec);
+    let mut enc_bit_rev =
+        BaseRadixCiphertext::<CiphertextBase<KeyswitchBootstrap>>::from_blocks(combined_vec);
 
     let ct_res = wopbs_key.keyswitch_to_pbs_params(&ct_res);
     enc_bit_rev = wopbs_key.keyswitch_to_pbs_params(&enc_bit_rev);
