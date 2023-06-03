@@ -10,13 +10,15 @@ use tfhe::{
     },
     shortint::{
         parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_1_CARRY_1,
+            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, 
+            PARAM_MESSAGE_1_CARRY_1,
+            PARAM_MESSAGE_3_CARRY_0,
         },
         wopbs::WopbsKey as WopbsKeyShortInt,
     },
 };
 
-fn parse_args() -> (String, usize, bool, HashMap<String, bool>, bool) {
+fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
     let matches = Command::new("HELM")
         .about("HELM: Homomorphic Evaluation with Lookup table Memoization")
         .arg(
@@ -49,20 +51,12 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>, bool) {
                 .help("Turn verbose printing on")
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("bool-to-lut")
-                .short('l')
-                .long("bool-to-lut")
-                .help("Convert boolean circuit to many-to-many LUTs")
-                .action(ArgAction::SetTrue),
-        )
         .get_matches();
     let file_name = matches
         .get_one::<String>("input")
         .expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
     let verbose = matches.get_flag("verbose");
-    let bool_to_lut = matches.get_flag("bool-to-lut");
 
     let input_wire_map = {
         if matches.contains_id("wires") {
@@ -86,13 +80,12 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>, bool) {
         num_cycles,
         verbose,
         input_wire_map,
-        bool_to_lut,
     )
 }
 
 fn main() {
     ascii::print_art();
-    let (file_name, num_cycles, verbose, input_wire_map, bool_to_lut) = parse_args();
+    let (file_name, num_cycles, verbose, input_wire_map) = parse_args();
     let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts) =
         verilog_parser::read_verilog_file(&file_name);
 
@@ -116,11 +109,6 @@ fn main() {
         circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
 
     circuit_ptxt.sort_circuit();
-    if !has_luts && bool_to_lut {
-        let partitions = circuit_ptxt.partition_circuit(6);
-        circuit_ptxt.partitions_to_lut_circuit(&partitions);
-        circuit_ptxt.sort_circuit();
-    }
     circuit_ptxt.compute_levels();
     #[cfg(debug_assertions)]
     circuit_ptxt.print_level_map();
@@ -144,13 +132,12 @@ fn main() {
     }
 
     // Encrypted Evaluation
-    if !has_luts && !bool_to_lut{
+    if !has_luts {
         // Gate mode
         let mut start = Instant::now();
         let (client_key, server_key) = gen_keys();
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
-        // let mut circuit = circuit::GateCircuit::new(client_key.clone(), server_key, circuit_ptxt);
         let mut circuit = circuit::GateCircuit::new(client_key, server_key, circuit_ptxt);
 
         // Client encrypts their inputs
@@ -195,7 +182,7 @@ fn main() {
         let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
-        let mut circuit = circuit::LutCircuit::new(
+        let mut circuit = circuit::HighPrecisionLutCircuit::new(
             wopbs_key_shortint,
             wopbs_key,
             client_key.clone(),

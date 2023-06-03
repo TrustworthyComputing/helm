@@ -20,7 +20,3 @@ tfhe = { version = "0.2.4", features = ["boolean", "shortint", "integer", "x86_6
 [[bin]]
 name = "helm"
 path = "src/bin/helm.rs"
-
-[[bin]]
-name = "test_lut"
-path = "src/bin/test_lut.rs"

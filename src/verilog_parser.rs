@@ -88,7 +88,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         gate_type,
         input_wires,
         lut_const,
-        vec![output_wire],
+        output_wire,
         0,
     )
 }
@@ -181,13 +181,13 @@ pub fn read_verilog_file(
                 let gate = parse_gate(&tokens);
                 if gate.get_gate_type() == GateType::Dff {
                     is_sequential = true;
-                    wire_map.insert(gate.get_output_wires()[0].clone(), false);
-                    inputs.push(gate.get_output_wires()[0].clone());
-                    dff_outputs.push(gate.get_output_wires()[0].clone());
+                    inputs.push(gate.get_output_wire());
+                    dff_outputs.push(gate.get_output_wire());
                 } else if gate.get_gate_type() == GateType::Lut {
                     has_luts = true;
                 }
-                wire_map.insert(gate.get_output_wires()[0].clone(), false);
+
+                wire_map.insert(gate.get_output_wire(), false);
                 gates.insert(gate);
             }
         }

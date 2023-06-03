@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
     vec,
@@ -12,6 +13,7 @@ use tfhe::{
     shortint::{
         ciphertext::{CiphertextBase, KeyswitchBootstrap},
         wopbs::WopbsKey as WopbsKeyShortInt,
+        ServerKey as ServerKeyShortInt,
     },
 };
 
@@ -35,11 +37,11 @@ pub struct Gate {
     gate_type: GateType,
     input_wires: Vec<String>,
     lut_const: Option<Vec<u64>>,
-    output_wire: Vec<String>,
+    output_wire: String,
     level: usize,
     cycle: usize,
     output: Option<bool>,
-    encrypted_output: Option<Ciphertext>,
+    encrypted_gate_output: Option<Ciphertext>,
     encrypted_lut_output: Option<CiphertextBase<KeyswitchBootstrap>>,
 }
 
@@ -48,6 +50,18 @@ impl Eq for Gate {}
 impl PartialEq for Gate {
     fn eq(&self, other: &Self) -> bool {
         self.gate_name == other.gate_name
+    }
+}
+
+impl PartialOrd for Gate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.gate_name.partial_cmp(&other.gate_name)
+    }
+}
+
+impl Ord for Gate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.gate_name.cmp(&other.gate_name)
     }
 }
 
@@ -78,7 +92,7 @@ impl Gate {
         gate_type: GateType,
         input_wires: Vec<String>,
         lut_const: Option<Vec<u64>>,
-        output_wire: Vec<String>,
+        output_wire: String,
         level: usize,
     ) -> Self {
         Gate {
@@ -90,7 +104,7 @@ impl Gate {
             level,
             cycle: 0,
             output: None,
-            encrypted_output: None,
+            encrypted_gate_output: None,
             encrypted_lut_output: None,
         }
     }
@@ -99,8 +113,8 @@ impl Gate {
         &self.input_wires
     }
 
-    pub fn get_output_wires(&self) -> &Vec<String> {
-        &self.output_wire
+    pub fn get_output_wire(&self) -> String {
+        self.output_wire.clone()
     }
 
     pub fn get_gate_type(&self) -> GateType {
@@ -116,7 +130,7 @@ impl Gate {
     }
 
     pub fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
-        if let Some(output) = self.output {
+        if let Some(output) = self.output.clone() {
             if self.cycle == cycle {
                 return output;
             }
@@ -127,21 +141,22 @@ impl Gate {
             GateType::Lut => {
                 let mut shift_amt = 0;
                 let end = input_values.len() - 1;
-                // convert input bits to int:  [1, 1, 0, 1] => 13
+                // Convert input bits to int:  [1, 1, 0, 1] => 13.
                 for (input_idx, &input_val) in input_values.iter().enumerate() {
                     if input_val {
                         shift_amt += 1 << (end - input_idx);
                     }
                 }
-                if let Some(lut_const) = &self.lut_const {
-                    ((lut_const[shift_amt]) & 1) > 0
+                // Convert integer LUT entry to bit array (multiple output wires)
+                if !&self.lut_const.as_ref().unwrap().is_empty() {
+                    (self.lut_const.as_ref().unwrap()[shift_amt] & 1) > 0
                 } else {
                     panic!("Lut const not provided");
                 }
             }
             GateType::Mux => {
-                let select_bit = input_values[2];
-                (select_bit && input_values[0]) || (!select_bit && input_values[1])
+                let select = input_values[2];
+                (select && input_values[0]) || (!select && input_values[1])
             }
             GateType::Nand => !input_values.iter().all(|&v| v),
             GateType::Nor => !input_values.iter().any(|&v| v),
@@ -156,7 +171,56 @@ impl Gate {
         output
     }
 
+    pub fn evaluate_encrypted(
+        &mut self,
+        server_key: &ServerKey,
+        input_values: &[Ciphertext],
+        cycle: usize,
+    ) -> Ciphertext {
+        if let Some(encrypted_gate_output) = self.encrypted_gate_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_gate_output;
+            }
+        }
+        let encrypted_gate_output = match self.gate_type {
+            GateType::And => server_key.and(&input_values[0], &input_values[1]),
+            GateType::Dff => input_values[0].clone(),
+            GateType::Lut => panic!("Can't mix LUTs with Boolean gates!"),
+            GateType::Mux => server_key.mux(
+                &input_values[2], &input_values[0], &input_values[1]
+            ),
+            GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
+            GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
+            GateType::Not => server_key.not(&input_values[0]),
+            GateType::Or => server_key.or(&input_values[0], &input_values[1]),
+            GateType::Xnor => server_key.xnor(&input_values[0], &input_values[1]),
+            GateType::Xor => server_key.xor(&input_values[0], &input_values[1]),
+        };
+
+        self.encrypted_gate_output = Some(encrypted_gate_output.clone());
+        encrypted_gate_output
+    }
+
     pub fn evaluate_encrypted_lut(
+        &mut self,
+        server_key: &ServerKeyShortInt,
+        input_values: &Vec<CiphertextBase<KeyswitchBootstrap>>,
+        cycle: usize,
+    ) -> CiphertextBase<KeyswitchBootstrap> {
+        if let Some(encrypted_lut_output) = self.encrypted_lut_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_lut_output;
+            }
+        }
+
+        lut(
+            server_key,
+            &self.lut_const.as_ref().unwrap(),
+            input_values,
+        )
+    }
+
+    pub fn evaluate_encrypted_high_precision_lut(
         &mut self,
         wopbs_shortkey: &WopbsKeyShortInt,
         wopbs_intkey: &WopbsKeyInt,
@@ -169,68 +233,63 @@ impl Gate {
                 return encrypted_lut_output;
             }
         }
-        lut(
+
+        high_precision_lut(
             wopbs_shortkey,
             wopbs_intkey,
             server_intkey,
-            &self.lut_const.as_mut().unwrap(),
+            &self.lut_const.as_ref().unwrap(),
             input_values,
         )
     }
 
-    pub fn evaluate_encrypted(
-        &mut self,
-        server_key: &ServerKey,
-        input_values: &[Ciphertext],
-        cycle: usize,
-    ) -> Ciphertext {
-        if let Some(encrypted_output) = self.encrypted_output.clone() {
-            if self.cycle == cycle {
-                return encrypted_output;
-            }
-        }
-        let encrypted_output = match self.gate_type {
-            GateType::And => server_key.and(&input_values[0], &input_values[1]),
-            GateType::Dff => input_values[0].clone(),
-            GateType::Lut => {
-                panic!("Can't mix LUTs with Boolean gates!");
-            }
-            GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
-            GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
-            GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
-            GateType::Not => server_key.not(&input_values[0]),
-            GateType::Or => server_key.or(&input_values[0], &input_values[1]),
-            GateType::Xnor => server_key.xnor(&input_values[0], &input_values[1]),
-            GateType::Xor => server_key.xor(&input_values[0], &input_values[1]),
-        };
+}
 
-        self.encrypted_output = Some(encrypted_output.clone());
-        encrypted_output
-    }
+// Shift the constant by ctxt amount
+fn eval_luts(x: u64, lut_table: &Vec<u64>) -> u64 {
+    lut_table[x as usize] & 1
 }
 
 pub fn lut(
+    sks: &ServerKeyShortInt,
+    lut_const: &Vec<u64>,
+    ctxts: &Vec<CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap>>,
+) -> CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap> {
+    // Σ ctxts[i] * 2^i
+    let ct_sum = ctxts
+        .iter()
+        .enumerate()
+        .map(|(i, ct)| sks.scalar_mul(ct, 1 << ctxts.len() - 1 - i))
+        .fold(sks.create_trivial(0), |acc, ct| sks.add(&acc, &ct));
+
+    // Generate LUT entries from lut_const
+    let lut = sks.generate_accumulator(|x| eval_luts(x, lut_const));
+
+    // Eval PBS and return
+    sks.apply_lookup_table(&ct_sum, &lut)
+}
+
+pub fn high_precision_lut(
     wk_si: &WopbsKeyShortInt,
     wk: &WopbsKeyInt,
     sks: &ServerKeyInt,
     lut_const: &Vec<u64>,
-    in_ct: &Vec<CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap>>,
+    ctxts: &Vec<CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap>>,
 ) -> CiphertextBase<tfhe::shortint::ciphertext::KeyswitchBootstrap> {
     // Combine input ctxts into a radix ctxt
     let mut combined_vec = vec![];
-    for block in in_ct {
+    for block in ctxts {
         combined_vec.insert(0, block.clone());
     }
-    let radix_ct =
-        BaseRadixCiphertext::<CiphertextBase<KeyswitchBootstrap>>::from_blocks(combined_vec);
+    let radix_ct = BaseRadixCiphertext::<CiphertextBase<KeyswitchBootstrap>>::
+        from_blocks(combined_vec);
 
     // KS to WoPBS
     let radix_ct = wk.keyswitch_to_wopbs_params(&sks, &radix_ct);
 
     // Generate LUT entries from lut_const
-    let lut = generate_lut_radix_helm(&wk_si, &radix_ct, eval_luts, lut_const);
-// TODO
-    // let lut = generate_lut_radix_helm(wk_si, &radix_ct, eval_luts, &(*lut_const as u64));
+    let lut = generate_high_precision_lut_radix_helm(
+        &wk_si, &radix_ct, eval_luts, lut_const);
 
     // Eval PBS
     let radix_ct = wk.wopbs(&radix_ct, &lut);
@@ -239,15 +298,10 @@ pub fn lut(
     let radix_ct = wk.keyswitch_to_pbs_params(&radix_ct);
 
     // Return LSB
-    radix_ct.blocks()[0].clone()
+    radix_ct.blocks().to_vec()[0].clone()
 }
 
-// Shift the constant by ctxt amount
-fn eval_luts(x: u64, lut_table: &Vec<u64>) -> u64 {
-    lut_table[x as usize]
-}
-
-pub fn generate_lut_radix_helm<F, T>(
+pub fn generate_high_precision_lut_radix_helm<F, T>(
     wk: &WopbsKeyShortInt,
     ct: &T,
     f: F,
