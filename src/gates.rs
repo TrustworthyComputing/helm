@@ -130,7 +130,7 @@ impl Gate {
     }
 
     pub fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
-        if let Some(output) = self.output.clone() {
+        if let Some(output) = self.output {
             if self.cycle == cycle {
                 return output;
             }
@@ -186,9 +186,7 @@ impl Gate {
             GateType::And => server_key.and(&input_values[0], &input_values[1]),
             GateType::Dff => input_values[0].clone(),
             GateType::Lut => panic!("Can't mix LUTs with Boolean gates!"),
-            GateType::Mux => server_key.mux(
-                &input_values[2], &input_values[0], &input_values[1]
-            ),
+            GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
             GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
             GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
             GateType::Not => server_key.not(&input_values[0]),
@@ -213,11 +211,7 @@ impl Gate {
             }
         }
 
-        lut(
-            server_key,
-            &self.lut_const.as_ref().unwrap(),
-            input_values,
-        )
+        lut(server_key, self.lut_const.as_ref().unwrap(), input_values)
     }
 
     pub fn evaluate_encrypted_high_precision_lut(
@@ -238,11 +232,10 @@ impl Gate {
             wopbs_shortkey,
             wopbs_intkey,
             server_intkey,
-            &self.lut_const.as_ref().unwrap(),
+            self.lut_const.as_ref().unwrap(),
             input_values,
         )
     }
-
 }
 
 // Shift the constant by ctxt amount
@@ -259,7 +252,7 @@ pub fn lut(
     let ct_sum = ctxts
         .iter()
         .enumerate()
-        .map(|(i, ct)| sks.scalar_mul(ct, 1 << ctxts.len() - 1 - i))
+        .map(|(i, ct)| sks.scalar_mul(ct, 1 << (ctxts.len() - 1 - i)))
         .fold(sks.create_trivial(0), |acc, ct| sks.add(&acc, &ct));
 
     // Generate LUT entries from lut_const
@@ -281,15 +274,14 @@ pub fn high_precision_lut(
     for block in ctxts {
         combined_vec.insert(0, block.clone());
     }
-    let radix_ct = BaseRadixCiphertext::<CiphertextBase<KeyswitchBootstrap>>::
-        from_blocks(combined_vec);
+    let radix_ct =
+        BaseRadixCiphertext::<CiphertextBase<KeyswitchBootstrap>>::from_blocks(combined_vec);
 
     // KS to WoPBS
-    let radix_ct = wk.keyswitch_to_wopbs_params(&sks, &radix_ct);
+    let radix_ct = wk.keyswitch_to_wopbs_params(sks, &radix_ct);
 
     // Generate LUT entries from lut_const
-    let lut = generate_high_precision_lut_radix_helm(
-        &wk_si, &radix_ct, eval_luts, lut_const);
+    let lut = generate_high_precision_lut_radix_helm(wk_si, &radix_ct, eval_luts, lut_const);
 
     // Eval PBS
     let radix_ct = wk.wopbs(&radix_ct, &lut);

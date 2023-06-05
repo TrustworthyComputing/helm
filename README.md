@@ -15,14 +15,30 @@ git clone --recurse-submodules git@github.com:TrustworthyComputing/helm.git
 ```
 
 ### Build & Run
+
+Compile and run the tests:
 ```shell
 cargo build --release
 cargo test --release
+```
+
+HELM has two modes: "gates"-mode and "LUTs"-mode. HELM automatically detects if 
+a LUTs or a gates circuit has been provided as input. Below are two examples:
+
+Example in "gates"-mode:
+```shell
 cargo run --bin helm --release -- \
     --input ./hdl-benchmarks/processed-netlists/s27.v
 cargo run --bin helm --release -- \
     --input ./hdl-benchmarks/processed-netlists/2-bit-adder.v \
     --wires ./hdl-benchmarks/test-cases/2-bit-adder.inputs.csv
+```
+
+Example in "LUTs"-mode:
+```shell
+cargo run --bin helm --release -- \
+    --input ./hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v \
+    --wires hdl-benchmarks/test-cases/8-bit-adder.inputs.csv
 ```
 
 ### Example of an ISCAS'85 circuit

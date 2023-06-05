@@ -3,24 +3,11 @@ use debug_print::debug_println;
 use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::{collections::HashMap, time::Instant};
 use termion::color;
-use tfhe::{
-    boolean::prelude::*,
-    integer::{
-        wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
-    },
-    shortint::{
-        parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, 
-            PARAM_MESSAGE_1_CARRY_1,
-            PARAM_MESSAGE_3_CARRY_0,
-        },
-        wopbs::WopbsKey as WopbsKeyShortInt,
-    },
-};
+use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_3_CARRY_0};
 
 fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
     let matches = Command::new("HELM")
-        .about("HELM: Homomorphic Evaluation with Lookup table Memoization")
+        .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
         .arg(
             Arg::new("input")
                 .long("input")
@@ -75,12 +62,7 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
         }
     };
 
-    (
-        file_name.to_string(),
-        num_cycles,
-        verbose,
-        input_wire_map,
-    )
+    (file_name.to_string(), num_cycles, verbose, input_wire_map)
 }
 
 fn main() {
@@ -133,6 +115,12 @@ fn main() {
 
     // Encrypted Evaluation
     if !has_luts {
+        println!(
+            "{} -- Gates mode -- {}",
+            color::Fg(color::LightYellow),
+            color::Fg(color::Reset)
+        );
+
         // Gate mode
         let mut start = Instant::now();
         let (client_key, server_key) = gen_keys();
@@ -168,27 +156,17 @@ fn main() {
             start.elapsed().as_secs_f64()
         );
     } else {
+        println!(
+            "{} -- LUTs mode -- {}",
+            color::Fg(color::LightYellow),
+            color::Fg(color::Reset)
+        );
+
         // LUT mode
         let mut start = Instant::now();
-        let (client_key_shortint, server_key_shortint) =
-            tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
-        let client_key = ClientKeyInt::from(client_key_shortint.clone());
-        let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
-        let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
-            &client_key_shortint,
-            &server_key_shortint,
-            &&WOPBS_PARAM_MESSAGE_1_CARRY_1,
-        );
-        let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
+        let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_3_CARRY_0); // single bit ctxt
+        let mut circuit = circuit::LutCircuit::new(client_key, server_key, circuit_ptxt);
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
-
-        let mut circuit = circuit::HighPrecisionLutCircuit::new(
-            wopbs_key_shortint,
-            wopbs_key,
-            client_key.clone(),
-            server_key,
-            circuit_ptxt,
-        );
 
         // Client encrypts their inputs
         start = Instant::now();

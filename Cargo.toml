@@ -1,6 +1,6 @@
 [package]
 name = "helm"
-description = "HELM: Homomorphic Evaluation with Lookup table Memoization"
+description = "HELM: Homomorphic Evaluation with EDA-driven Logic Minimization"
 version = "0.1.0"
 edition = "2021"
 authors = ["Dimitris Mouris <jimouris@udel.edu>", "Charles Gouert <cgouert@udel.edu>"]

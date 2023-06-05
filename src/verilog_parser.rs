@@ -66,7 +66,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         let lut_const_str = input_wires.remove(0);
         let lut_const_int = if lut_const_str.starts_with("0x") {
             Some(
-                match usize::from_str_radix(&lut_const_str.trim_start_matches("0x"), 16) {
+                match usize::from_str_radix(lut_const_str.trim_start_matches("0x"), 16) {
                     Ok(n) => n,
                     Err(_) => panic!("Failed to parse hex"),
                 },
@@ -83,14 +83,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         None
     };
 
-    Gate::new(
-        gate_name,
-        gate_type,
-        input_wires,
-        lut_const,
-        output_wire,
-        0,
-    )
+    Gate::new(gate_name, gate_type, input_wires, lut_const, output_wire, 0)
 }
 
 fn parse_range(range_str: &str) -> Option<(usize, usize)> {
@@ -228,9 +221,8 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) = read_verilog_file(
-        "hdl-benchmarks/processed-netlists/2-bit-adder.v"
-    );
+    let (gates, wire_map, inputs, _, _, _, _) =
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
@@ -239,13 +231,10 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) = read_verilog_file(
-        "hdl-benchmarks/processed-netlists/2-bit-adder.v"
-    );
+    let (_, _, inputs, _, _, _, _) =
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
-    let input_wires_map = read_input_wires(
-        "hdl-benchmarks/test-cases/2-bit-adder.inputs.csv"
-    );
+    let input_wires_map = read_input_wires("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv");
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {
