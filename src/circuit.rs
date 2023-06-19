@@ -105,22 +105,29 @@ impl<'a> Circuit<'a> {
             wire_status.insert(input.clone());
         });
 
+        let mut dff_level = Vec::new();
         while !self.gates.is_empty() {
             // Temporary vector to store retained gates
             let mut level = Vec::new();
             let mut next_wire_status = HashSet::new();
-
+            let mut ready = false;
             self.gates.retain(|gate| {
-                let ready = gate
-                    .get_input_wires()
-                    .iter()
-                    .all(|wire| wire_status.contains(wire));
-
-                if ready {
+                if gate.get_gate_type() == GateType::Dff {
                     next_wire_status.insert(gate.get_output_wire());
-                    level.push(gate.clone());
+                    dff_level.push(gate.clone());
+                    ready = true;
                 }
+                else {
+                    ready = gate
+                        .get_input_wires()
+                        .iter()
+                        .all(|wire| wire_status.contains(wire));
 
+                    if ready {
+                        next_wire_status.insert(gate.get_output_wire());
+                        level.push(gate.clone());
+                    }
+                }
                 !ready
             });
 
@@ -130,7 +137,7 @@ impl<'a> Circuit<'a> {
             level.sort();
             self.ordered_gates.extend(level);
         }
-
+        self.ordered_gates.extend(dff_level);
         // Remove all the gates after sorting is done. Use ordered_gates from
         // now on.
         self.gates.clear();
