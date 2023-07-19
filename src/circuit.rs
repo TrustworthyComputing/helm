@@ -94,7 +94,6 @@ impl<'a> Circuit<'a> {
         }
     }
 
-    // TODO: sequential
     // Topologically sort the gates
     pub fn sort_circuit(&mut self) {
         assert!(!self.gates.is_empty());
@@ -514,8 +513,14 @@ impl<'a> EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit<'a> {
                         eval_values[index].read().unwrap().clone()
                     })
                     .collect();
-                let output_value =
-                    gate.evaluate_encrypted_lut(&self.server_key, &input_values, cycle);
+                let output_value;
+                if gate.get_gate_type() == GateType::Lut {
+                    output_value =
+                        gate.evaluate_encrypted_lut(&self.server_key, &input_values, cycle);
+                }
+                else {
+                    output_value = gate.evaluate_encrypted_dff(&input_values, cycle);
+                }
 
                 // Get the corresponding index in the wires array
                 let output_index = key_to_index[&gate.get_output_wire()];

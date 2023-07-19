@@ -20,7 +20,7 @@ use tfhe::{
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
     And,  // and  ID(in0, in1, out);
-    Dff,  // dff  ID(in, ouevaluate_encryptedt);
+    Dff,  // dff  ID(in, out);
     Lut,  // lut  ID(const, in0, ... , inN-1, out);
     Mux,  // mux  ID(in0, in1, sel, out);
     Nand, // nand ID(in0, in1, out);
@@ -29,6 +29,9 @@ pub enum GateType {
     Or,   // or   ID(in0, in1, out);
     Xnor, // xnor ID(in0, in1, out);
     Xor,  // xor  ID(in0, in1, out);
+    Buf,  // buf  ID(in, out);
+    ConstOne, // one(out);
+    ConstZero, // zero(out);
 }
 
 #[derive(Clone)]
@@ -164,6 +167,9 @@ impl Gate {
             GateType::Or => input_values.iter().any(|&v| v),
             GateType::Xnor => input_values.iter().filter(|&&v| v).count() % 2 != 1,
             GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
+            GateType::Buf => input_values[0],
+            GateType::ConstOne => true,
+            GateType::ConstZero => false,
         };
 
         self.output = Some(output);
@@ -193,6 +199,9 @@ impl Gate {
             GateType::Or => server_key.or(&input_values[0], &input_values[1]),
             GateType::Xnor => server_key.xnor(&input_values[0], &input_values[1]),
             GateType::Xor => server_key.xor(&input_values[0], &input_values[1]),
+            GateType::Buf => input_values[0].clone(),
+            GateType::ConstOne => server_key.trivial_encrypt(true),
+            GateType::ConstZero => server_key.trivial_encrypt(false),
         };
 
         self.encrypted_gate_output = Some(encrypted_gate_output.clone());
@@ -212,6 +221,21 @@ impl Gate {
         }
 
         lut(server_key, self.lut_const.as_ref().unwrap(), input_values)
+    }
+
+    pub fn evaluate_encrypted_dff(
+        &mut self,
+        input_values: &Vec<CiphertextBase<KeyswitchBootstrap>>,
+        cycle: usize,
+    ) -> CiphertextBase<KeyswitchBootstrap> {
+        if let Some(encrypted_lut_output) = self.encrypted_lut_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_lut_output;
+            }
+        }
+        let out = input_values[0].clone();
+        self.encrypted_lut_output = Some(out.clone());
+        out
     }
 
     pub fn evaluate_encrypted_high_precision_lut(

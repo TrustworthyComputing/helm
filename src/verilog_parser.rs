@@ -28,6 +28,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "or" => GateType::Or,
         "xnor" => GateType::Xnor,
         "xor" => GateType::Xor,
+        "buf" => GateType::Buf,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -38,7 +39,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
     let gate_name = String::from(name_and_inputs[0]);
 
     let (mut input_wires, output_wire) = match gate_type {
-        GateType::Not | GateType::Dff => (
+        GateType::Not | GateType::Dff | GateType::Buf => (
             vec![String::from(name_and_inputs[1].trim())],
             String::from(tokens[2].trim_end_matches(';').trim_end_matches(')')),
         ),
