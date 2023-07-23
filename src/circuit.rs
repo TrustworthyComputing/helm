@@ -105,6 +105,7 @@ impl<'a> Circuit<'a> {
         });
 
         let mut dff_level = Vec::new();
+        let mut const_level = Vec::new();
         while !self.gates.is_empty() {
             // Temporary vector to store retained gates
             let mut level = Vec::new();
@@ -115,6 +116,12 @@ impl<'a> Circuit<'a> {
                     next_wire_status.insert(gate.get_output_wire());
                     dff_level.push(gate.clone());
                     ready = true;
+                }
+                else if gate.get_gate_type() == GateType::ConstOne || 
+                        gate.get_gate_type() == GateType::ConstZero {
+                            next_wire_status.insert(gate.get_output_wire());
+                            const_level.push(gate.clone());
+                            ready = true;
                 }
                 else {
                     ready = gate
