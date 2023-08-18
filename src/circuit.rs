@@ -13,7 +13,8 @@ use tfhe::{
         wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
     },
     shortint::{
-        ciphertext::{CiphertextBase, KeyswitchBootstrap},
+        ciphertext::Ciphertext,
+        PBSOrder::KeyswitchBootstrap,
         wopbs::WopbsKey as WopbsKeyShortInt,
         ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
     },
@@ -25,7 +26,7 @@ use debug_print::debug_println;
 use rand::Rng;
 #[cfg(test)]
 use tfhe::shortint::parameters::{
-    parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_1_CARRY_1,
+    parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS, PARAM_MESSAGE_1_CARRY_1,
     PARAM_MESSAGE_3_CARRY_0,
 };
 
@@ -339,8 +340,8 @@ impl<'a> HighPrecisionLutCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<Ciphertext> for GateCircuit<'a> {
-    type CtxtType = Ciphertext;
+impl<'a> EvalCircuit<tfhe::boolean::ciphertext::Ciphertext> for GateCircuit<'a> {
+    type CtxtType = tfhe::boolean::ciphertext::Ciphertext;
 
     fn encrypt_inputs(
         &mut self,
@@ -448,8 +449,8 @@ impl<'a> EvalCircuit<Ciphertext> for GateCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit<'a> {
-    type CtxtType = CiphertextBase<KeyswitchBootstrap>;
+impl<'a> EvalCircuit<Ciphertext> for LutCircuit<'a> {
+    type CtxtType = Ciphertext;
 
     fn encrypt_inputs(
         &mut self,
@@ -566,8 +567,8 @@ impl<'a> EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for LutCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<CiphertextBase<KeyswitchBootstrap>> for HighPrecisionLutCircuit<'a> {
-    type CtxtType = CiphertextBase<KeyswitchBootstrap>;
+impl<'a> EvalCircuit<Ciphertext> for HighPrecisionLutCircuit<'a> {
+    type CtxtType = Ciphertext;
 
     fn encrypt_inputs(
         &mut self,
@@ -866,7 +867,7 @@ fn test_evaluate_encrypted_high_precision_lut_circuit_parallel() {
     let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
         &client_key_shortint,
         &server_key_shortint,
-        &WOPBS_PARAM_MESSAGE_1_CARRY_1,
+        &WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
     );
     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
