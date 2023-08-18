@@ -52,7 +52,7 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
             verilog_parser::read_input_wires(input_wires_file)
         } else {
             println!(
-                "{}[!]{} No CSV file provided for the input wires, 
+                "{}[!]{} No CSV file provided for the input wires,
                 they will be initialized to false.",
                 color::Fg(color::LightYellow),
                 color::Fg(color::Reset)

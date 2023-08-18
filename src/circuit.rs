@@ -13,9 +13,7 @@ use tfhe::{
         wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
     },
     shortint::{
-        ciphertext::Ciphertext,
-        PBSOrder::KeyswitchBootstrap,
-        wopbs::WopbsKey as WopbsKeyShortInt,
+        ciphertext::Ciphertext, wopbs::WopbsKey as WopbsKeyShortInt,
         ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
     },
 };
@@ -117,14 +115,13 @@ impl<'a> Circuit<'a> {
                     next_wire_status.insert(gate.get_output_wire());
                     dff_level.push(gate.clone());
                     ready = true;
-                }
-                else if gate.get_gate_type() == GateType::ConstOne || 
-                        gate.get_gate_type() == GateType::ConstZero {
-                            next_wire_status.insert(gate.get_output_wire());
-                            const_level.push(gate.clone());
-                            ready = true;
-                }
-                else {
+                } else if gate.get_gate_type() == GateType::ConstOne
+                    || gate.get_gate_type() == GateType::ConstZero
+                {
+                    next_wire_status.insert(gate.get_output_wire());
+                    const_level.push(gate.clone());
+                    ready = true;
+                } else {
                     ready = gate
                         .get_input_wires()
                         .iter()
@@ -521,14 +518,13 @@ impl<'a> EvalCircuit<Ciphertext> for LutCircuit<'a> {
                         eval_values[index].read().unwrap().clone()
                     })
                     .collect();
-                let output_value;
-                if gate.get_gate_type() == GateType::Lut {
-                    output_value =
-                        gate.evaluate_encrypted_lut(&self.server_key, &input_values, cycle);
-                }
-                else {
-                    output_value = gate.evaluate_encrypted_dff(&input_values, cycle);
-                }
+                let output_value = {
+                    if gate.get_gate_type() == GateType::Lut {
+                        gate.evaluate_encrypted_lut(&self.server_key, &input_values, cycle)
+                    } else {
+                        gate.evaluate_encrypted_dff(&input_values, cycle)
+                    }
+                };
 
                 // Get the corresponding index in the wires array
                 let output_index = key_to_index[&gate.get_output_wire()];
@@ -696,14 +692,70 @@ fn test_gate_evaluation() {
     let ptxts = vec![true, false];
     let ctxts = vec![client_key.encrypt(true), client_key.encrypt(false)];
     let gates = vec![
-        Gate::new(String::from(""), GateType::And, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Or, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Nor, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Xor, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Nand, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Not, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Xnor, vec![], None, "".to_string(), 0),
-        Gate::new(String::from(""), GateType::Mux, vec![], None, "".to_string(), 0),
+        Gate::new(
+            String::from(""),
+            GateType::And,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Or,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Nor,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Xor,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Nand,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Not,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Xnor,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
+        Gate::new(
+            String::from(""),
+            GateType::Mux,
+            vec![],
+            None,
+            "".to_string(),
+            0,
+        ),
     ];
     let mut rng = rand::thread_rng();
     for mut gate in gates {

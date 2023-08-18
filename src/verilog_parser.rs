@@ -7,10 +7,13 @@ use crate::gates::{Gate, GateType};
 
 fn extract_const_val(input_str: &str) -> &str {
     let start_index = input_str.find('(').expect("Opening parenthesis not found");
-    let end_index = input_str[start_index + 1..].find(')').expect("Closing parenthesis not found") + start_index + 1;
+    let end_index = input_str[start_index + 1..]
+        .find(')')
+        .expect("Closing parenthesis not found")
+        + start_index
+        + 1;
     &input_str[start_index + 1..end_index]
 }
-
 
 fn usize_to_bitvec(value: usize) -> Vec<u64> {
     let mut bits: Vec<u64> = Vec::new();
@@ -65,7 +68,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
             (input_wires, output_wire)
         }
         GateType::ConstOne | GateType::ConstZero => {
-            let output_wire = String::from(extract_const_val(&tokens[1]));
+            let output_wire = String::from(extract_const_val(tokens[1]));
             (vec![], output_wire)
         }
         _ => {

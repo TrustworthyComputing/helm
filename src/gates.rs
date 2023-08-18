@@ -5,39 +5,37 @@ use std::{
     vec,
 };
 use tfhe::{
-    generate_keys,
-    set_server_key,
-    ConfigBuilder,
-    FheUint32,
     boolean::prelude::*,
     integer::{
-        ciphertext::{BaseRadixCiphertext, RadixCiphertext}, wopbs as WopbsInt, wopbs::{WopbsKey as WopbsKeyInt, IntegerWopbsLUT},
+        ciphertext::BaseRadixCiphertext,
+        wopbs as WopbsInt,
+        wopbs::{IntegerWopbsLUT, WopbsKey as WopbsKeyInt},
         IntegerCiphertext, ServerKey as ServerKeyInt,
     },
     shortint::{
-        Ciphertext as CiphertextBase,
-        wopbs::WopbsKey as WopbsKeyShortInt,
+        wopbs::WopbsKey as WopbsKeyShortInt, Ciphertext as CiphertextBase,
         ServerKey as ServerKeyShortInt,
     },
+    FheUint32,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
-    And,  // and  ID(in0, in1, out);
-    Dff,  // dff  ID(in, out);
-    Lut,  // lut  ID(const, in0, ... , inN-1, out);
-    Mux,  // mux  ID(in0, in1, sel, out);
-    Nand, // nand ID(in0, in1, out);
-    Nor,  // nor  ID(in0, in1, out);
-    Not,  // not  ID(in, out);
-    Or,   // or   ID(in0, in1, out);
-    Xnor, // xnor ID(in0, in1, out);
-    Xor,  // xor  ID(in0, in1, out);
-    Buf,  // buf  ID(in, out);
+    And,       // and  ID(in0, in1, out);
+    Dff,       // dff  ID(in, out);
+    Lut,       // lut  ID(const, in0, ... , inN-1, out);
+    Mux,       // mux  ID(in0, in1, sel, out);
+    Nand,      // nand ID(in0, in1, out);
+    Nor,       // nor  ID(in0, in1, out);
+    Not,       // not  ID(in, out);
+    Or,        // or   ID(in0, in1, out);
+    Xnor,      // xnor ID(in0, in1, out);
+    Xor,       // xor  ID(in0, in1, out);
+    Buf,       // buf  ID(in, out);
     ConstOne,  // one(out);
     ConstZero, // zero(out);
-    Mult, // mult ID(in0, in1, out);
-    Add,  // add  ID(in0, in1, out);
+    Mult,      // mult ID(in0, in1, out);
+    Add,       // add  ID(in0, in1, out);
 }
 
 #[derive(Clone)]
@@ -142,21 +140,21 @@ impl Gate {
         self.level = level;
     }
 
-    pub fn evaluate_multibit(&mut self, input_values: &Vec<u64>, cycle: usize) -> u64 {
+    pub fn evaluate_multibit(&mut self, input_values: &[u64], cycle: usize) -> u64 {
         if let Some(multibit_output) = self.multibit_output {
             if self.cycle == cycle {
                 return multibit_output;
             }
         }
-        let mut multibit_output = 0;
-        if self.gate_type == GateType::Mult {
-            multibit_output = input_values.iter().fold(1, |acc, &v| acc * v);
-        }
-        else if self.gate_type == GateType::Add {
-            multibit_output = input_values.iter().sum();
-
-        }
-        self.multibit_output = Some(multibit_output);
+        let multibit_output = {
+            if self.gate_type == GateType::Mult {
+                input_values.iter().product()
+            } else if self.gate_type == GateType::Add {
+                input_values.iter().sum()
+            } else {
+                0
+            }
+        };
         self.cycle = cycle;
         multibit_output
     }
@@ -258,23 +256,21 @@ impl Gate {
 
     pub fn evaluate_encrypted_mul_block(
         &mut self,
-        server_key: &ServerKeyInt, 
-        ct1: &FheUint32, 
+        ct1: &FheUint32,
         ct2: &FheUint32,
-        cycle: usize, 
+        cycle: usize,
     ) -> FheUint32 {
         if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
             if self.cycle == cycle {
                 return encrypted_multibit_output;
             }
         }
-        let out = ct1 * ct2;
-        out 
+        ct1 * ct2
     }
 
     pub fn evaluate_encrypted_dff(
         &mut self,
-        input_values: &Vec<CiphertextBase>,
+        input_values: &[CiphertextBase],
         cycle: usize,
     ) -> CiphertextBase {
         if let Some(encrypted_lut_output) = self.encrypted_lut_output.clone() {
@@ -347,8 +343,7 @@ pub fn high_precision_lut(
     for block in ctxts {
         combined_vec.insert(0, block.clone());
     }
-    let radix_ct =
-        BaseRadixCiphertext::<CiphertextBase>::from_blocks(combined_vec);
+    let radix_ct = BaseRadixCiphertext::<CiphertextBase>::from_blocks(combined_vec);
 
     // KS to WoPBS
     let radix_ct = wk.keyswitch_to_wopbs_params(sks, &radix_ct);
@@ -394,9 +389,10 @@ where
     if 1 << total_bit < wk.param.polynomial_size.0 as u64 {
         lut_size = wk.param.polynomial_size.0;
     }
-    let mut lut =
-    IntegerWopbsLUT::new(tfhe::shortint::wopbs::PlaintextCount(lut_size), tfhe::shortint::wopbs::CiphertextCount(ct.blocks().len()));
-
+    let mut lut = IntegerWopbsLUT::new(
+        tfhe::shortint::wopbs::PlaintextCount(lut_size),
+        tfhe::shortint::wopbs::CiphertextCount(ct.blocks().len()),
+    );
 
     let basis = ct.moduli()[0];
     let delta = (1 << 63) / (wk.param.message_modulus.0 * wk.param.carry_modulus.0) as u64;
@@ -407,7 +403,8 @@ where
         let f_val = f(decoded_val % modulus, lut_entry) % modulus;
         let encoded_f_val = WopbsInt::encode_radix(f_val, basis, block_nb as u64);
         for (lut_number, radix_encoded_val) in encoded_f_val.iter().enumerate().take(block_nb) {
-            lut.as_mut().get_small_lut_mut(lut_number).as_mut()[lut_index_val as usize] = radix_encoded_val * delta;
+            lut.as_mut().get_small_lut_mut(lut_number).as_mut()[lut_index_val as usize] =
+                radix_encoded_val * delta;
         }
     }
     lut
