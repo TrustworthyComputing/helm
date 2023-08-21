@@ -268,6 +268,48 @@ impl Gate {
         ct1 * ct2
     }
 
+    pub fn evaluate_encrypted_mul_block_plain(
+        &mut self,
+        ct1: &FheUint32,
+        pt1: u32,
+        cycle: usize,
+    ) -> FheUint32 {
+        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_multibit_output;
+            }
+        }
+        ct1 * pt1
+    }
+
+    pub fn evaluate_encrypted_add_block(
+        &mut self,
+        ct1: &FheUint32,
+        ct2: &FheUint32,
+        cycle: usize,
+    ) -> FheUint32 {
+        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_multibit_output;
+            }
+        }
+        ct1 + ct2
+    }
+
+    pub fn evaluate_encrypted_add_block_plain(
+        &mut self,
+        ct1: &FheUint32,
+        pt1: u32,
+        cycle: usize,
+    ) -> FheUint32 {
+        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_multibit_output;
+            }
+        }
+        ct1 + pt1
+    }
+
     pub fn evaluate_encrypted_dff(
         &mut self,
         input_values: &[CiphertextBase],

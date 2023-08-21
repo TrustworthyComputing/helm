@@ -8,6 +8,7 @@ use std::{
 };
 use termion::color;
 use tfhe::{
+    prelude::*,
     boolean::prelude::*,
     integer::{
         wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
@@ -30,11 +31,12 @@ use tfhe::shortint::parameters::{
 
 pub trait EvalCircuit<T> {
     type CtxtType;
+    type PtxtValType;
 
     fn encrypt_inputs(
         &mut self,
-        wire_map_im: &HashMap<String, bool>,
-        input_wire_map: &HashMap<String, bool>,
+        wire_map_im: &HashMap<String, Self::PtxtValType>,
+        input_wire_map: &HashMap<String, Self::PtxtValType>,
     ) -> HashMap<String, T>;
 
     fn evaluate_encrypted(
@@ -67,6 +69,12 @@ pub struct LutCircuit<'a> {
     server_key: ServerKeyShortInt,
 }
 
+pub struct ArithCircuit<'a> {
+    circuit: Circuit<'a>,
+    client_key: tfhe::ClientKey,
+    server_key: tfhe::ServerKey,
+}
+
 // Note: this is not used as there is no easy way to get LUTs with more than six inputs.
 pub struct HighPrecisionLutCircuit<'a> {
     circuit: Circuit<'a>,
@@ -74,6 +82,10 @@ pub struct HighPrecisionLutCircuit<'a> {
     wopbs_intkey: WopbsKeyInt,
     client_key: ClientKeyInt,
     server_intkey: ServerKeyInt,
+}
+
+fn is_numeric_string(s: &str) -> bool {
+    s.chars().all(|c| c.is_digit(10))
 }
 
 impl<'a> Circuit<'a> {
@@ -319,6 +331,20 @@ impl<'a> LutCircuit<'a> {
     }
 }
 
+impl<'a> ArithCircuit<'a> {
+    pub fn new(
+        client_key: tfhe::ClientKey,
+        server_key: tfhe::ServerKey,
+        circuit: Circuit,
+    ) -> ArithCircuit {
+        ArithCircuit {
+            client_key,
+            server_key,
+            circuit,
+        }
+    }
+}
+
 impl<'a> HighPrecisionLutCircuit<'a> {
     pub fn new(
         wopbs_shortkey: WopbsKeyShortInt,
@@ -339,6 +365,7 @@ impl<'a> HighPrecisionLutCircuit<'a> {
 
 impl<'a> EvalCircuit<tfhe::boolean::ciphertext::Ciphertext> for GateCircuit<'a> {
     type CtxtType = tfhe::boolean::ciphertext::Ciphertext;
+    type PtxtValType = bool;
 
     fn encrypt_inputs(
         &mut self,
@@ -448,6 +475,7 @@ impl<'a> EvalCircuit<tfhe::boolean::ciphertext::Ciphertext> for GateCircuit<'a> 
 
 impl<'a> EvalCircuit<Ciphertext> for LutCircuit<'a> {
     type CtxtType = Ciphertext;
+    type PtxtValType = bool;
 
     fn encrypt_inputs(
         &mut self,
@@ -563,8 +591,169 @@ impl<'a> EvalCircuit<Ciphertext> for LutCircuit<'a> {
     }
 }
 
+impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
+    type CtxtType = tfhe::FheUint32;
+    type PtxtValType = u32;
+
+    fn encrypt_inputs(
+        &mut self,
+        wire_map_im: &HashMap<String, u32>,
+        input_wire_map: &HashMap<String, u32>,
+    ) -> HashMap<String, Self::CtxtType> {
+        let mut enc_wire_map = HashMap::<String, _>::new();
+        for (wire, &value) in wire_map_im {
+            if is_numeric_string(wire) == false {
+                enc_wire_map.insert(wire.to_string(), Self::CtxtType::try_encrypt(value, &self.client_key).unwrap());
+            }
+        }
+        for input_wire in self.circuit.input_wires {
+            // if no inputs are provided, initialize it to false
+            if input_wire_map.is_empty() {
+                enc_wire_map.insert(input_wire.to_string(), Self::CtxtType::try_encrypt(0, &self.client_key).unwrap());
+            } else if !input_wire_map.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                enc_wire_map.insert(
+                    input_wire.to_string(),
+                    Self::CtxtType::try_encrypt(input_wire_map[input_wire], &self.client_key).unwrap(),
+                );
+            }
+        }
+        for wire in self.circuit.dff_outputs {
+            enc_wire_map.insert(wire.to_string(), Self::CtxtType::try_encrypt(0, &self.client_key).unwrap());
+        }
+
+        enc_wire_map
+    }
+
+    fn evaluate_encrypted(
+        &mut self,
+        enc_wire_map: &HashMap<String, Self::CtxtType>,
+        cycle: usize,
+    ) -> HashMap<String, Self::CtxtType> {
+        // Make sure the sort circuit function has run.
+        assert!(self.circuit.gates.is_empty());
+        // Make sure the compute_levels function has run.
+        assert!(self.circuit.ordered_gates.is_empty());
+
+        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+            .iter()
+            .enumerate()
+            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
+            .unzip();
+
+        // For each level
+        let total_levels = self.circuit.level_map.len();
+        for (level, gates) in self
+            .circuit
+            .level_map
+            .iter_mut()
+            .sorted_by_key(|(level, _)| *level)
+        {
+            // Evaluate all the gates in the level in parallel
+            gates.par_iter_mut().for_each(|gate| {
+                // FIXME: Surely there's a better way, fix later
+                let mut is_ptxt_op = false;
+                let output_value;
+                // Identify if any of the input wires are constants
+                for in_wire in gate.get_input_wires().iter() {
+                    if is_numeric_string(&in_wire) {
+                        is_ptxt_op = true;
+                    }
+                }
+                if is_ptxt_op {
+                    let mut ptxt_operand = 0;
+                    let mut ctxt_operand : Option<Self::CtxtType> = None;
+                    for in_wire in gate.get_input_wires().iter() {
+                        if is_numeric_string(&in_wire) {
+                            ptxt_operand = in_wire.parse::<Self::PtxtValType>().unwrap_or(0);
+                        }
+                        else {
+                            let index = match key_to_index.get(in_wire) {
+                                Some(&index) => index,
+                                None => panic!("Input wire {} not in key_to_index map", in_wire),
+                            };
+                            // Read the value of the corresponding key
+                            ctxt_operand = Some(eval_values[index].read().unwrap().clone());
+                        }
+                    }
+                    output_value = {
+                        let ct_op = match ctxt_operand {
+                            Some(value) => value,
+                            None => panic!("Empty ctxt operand!"),
+                        };
+                        if gate.get_gate_type() == GateType::Add {
+                            gate.evaluate_encrypted_add_block_plain(&ct_op, ptxt_operand, cycle)
+                        } else {
+                            gate.evaluate_encrypted_mul_block_plain(&ct_op, ptxt_operand, cycle)
+                        }
+                    }
+                }
+                else {
+                    let input_values: Vec<Self::CtxtType> = gate
+                        .get_input_wires()
+                        .iter()
+                        .map(|input| {
+                            // Get the corresponding index in the wires array
+                            let index = match key_to_index.get(input) {
+                                Some(&index) => index,
+                                None => panic!("Input wire {} not in key_to_index map", input),
+                            };
+
+                            // Read the value of the corresponding key
+                            eval_values[index].read().unwrap().clone()
+                        })
+                        .collect();
+                    output_value = {
+                        if gate.get_gate_type() == GateType::Add {
+                            gate.evaluate_encrypted_add_block(&input_values[0], &input_values[1], cycle)
+                        } else {
+                            gate.evaluate_encrypted_mul_block(&input_values[0], &input_values[1], cycle)
+                        }
+                    };
+                }
+
+                // Get the corresponding index in the wires array
+                let output_index = key_to_index[&gate.get_output_wire()];
+
+                // Update the value of the corresponding key
+                *eval_values[output_index]
+                    .write()
+                    .expect("Failed to acquire write lock") = output_value;
+            });
+            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
+        }
+
+        key_to_index
+            .iter()
+            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
+            .collect()
+    }
+
+    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, Self::CtxtType>, verbose: bool) {
+        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+            if i > 10 && !verbose {
+                println!(
+                    "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
+                    color::Fg(color::LightYellow),
+                    color::Fg(color::Reset)
+                );
+                break;
+            } else {
+                let decrypted: Self::PtxtValType = enc_wire_map[output_wire].decrypt(&self.client_key);
+                println!(
+                    " {}: {}",
+                    output_wire,
+                    decrypted
+                );
+            }
+        }
+    }
+}
+
 impl<'a> EvalCircuit<Ciphertext> for HighPrecisionLutCircuit<'a> {
     type CtxtType = Ciphertext;
+    type PtxtValType = bool;
 
     fn encrypt_inputs(
         &mut self,
@@ -783,7 +972,7 @@ fn test_gate_evaluation() {
 
 #[test]
 fn test_evaluate_circuit_parallel() {
-    let (gates_set, mut wire_map, input_wires, _, _, _, _) =
+    let (gates_set, mut wire_map, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     let empty = vec![];
@@ -809,7 +998,7 @@ fn test_evaluate_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
-    let (gates_set, wire_map_im, input_wires, _, _, _, _) =
+    let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
     let mut ptxt_wire_map = wire_map_im.clone();
 
@@ -853,7 +1042,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_lut_circuit_parallel() {
-    let (gates_set, wire_map_im, input_wires, _, _, _, _) =
+    let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
         );
@@ -897,7 +1086,7 @@ fn test_evaluate_encrypted_lut_circuit_parallel() {
 
 #[test]
 fn test_evaluate_encrypted_high_precision_lut_circuit_parallel() {
-    let (gates_set, wire_map_im, input_wires, _, _, _, _) =
+    let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v",
         );

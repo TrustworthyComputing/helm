@@ -41,6 +41,8 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "buf" => GateType::Buf,
         "czero" => GateType::ConstZero,
         "cone" => GateType::ConstOne,
+        "add" => GateType::Add,
+        "mult" => GateType::Mult,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -129,12 +131,14 @@ pub fn read_verilog_file(
     Vec<String>,
     bool,
     bool,
+    bool,
 ) {
     let file = File::open(file_name).expect("Failed to open file");
     let reader = BufReader::new(file);
 
     let mut is_sequential = false;
     let mut has_luts = false;
+    let mut has_arith = false;
     let mut gates = HashSet::new();
     let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
@@ -195,6 +199,9 @@ pub fn read_verilog_file(
                     dff_outputs.push(gate.get_output_wire());
                 } else if gate.get_gate_type() == GateType::Lut {
                     has_luts = true;
+                } else if gate.get_gate_type() == GateType::Add 
+                        || gate.get_gate_type() == GateType::Mult {
+                    has_arith = true;
                 }
 
                 wire_map.insert(gate.get_output_wire(), false);
@@ -211,6 +218,7 @@ pub fn read_verilog_file(
         dff_outputs,
         is_sequential,
         has_luts,
+        has_arith,
     )
 }
 
@@ -238,7 +246,7 @@ pub fn read_input_wires(file_name: &str) -> HashMap<String, bool> {
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) =
+    let (gates, wire_map, inputs, _, _, _, _, _) =
         read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     assert_eq!(gates.len(), 10);
@@ -248,7 +256,7 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) =
+    let (_, _, inputs, _, _, _, _, _) =
         read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
 
     let input_wires_map = read_input_wires("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv");

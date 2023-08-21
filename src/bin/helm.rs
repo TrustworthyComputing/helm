@@ -4,6 +4,7 @@ use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::{collections::HashMap, time::Instant};
 use termion::color;
 use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_4_CARRY_0};
+use tfhe::{generate_keys, set_server_key, ConfigBuilder};
 
 fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
     let matches = Command::new("HELM")
@@ -68,7 +69,7 @@ fn parse_args() -> (String, usize, bool, HashMap<String, bool>) {
 fn main() {
     ascii::print_art();
     let (file_name, num_cycles, verbose, input_wire_map) = parse_args();
-    let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts) =
+    let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts, has_arith) =
         verilog_parser::read_verilog_file(&file_name);
 
     if num_cycles > 1 && !is_sequential {
@@ -114,7 +115,7 @@ fn main() {
     }
 
     // Encrypted Evaluation
-    if !has_luts {
+    if !has_luts && !has_arith {
         println!(
             "{} -- Gates mode -- {}",
             color::Fg(color::LightYellow),
@@ -155,6 +156,53 @@ fn main() {
             "Decryption done in {} seconds.",
             start.elapsed().as_secs_f64()
         );
+    } else if has_arith {
+        println!(
+            "{} -- Arithmetic mode -- {}",
+            color::Fg(color::LightYellow),
+            color::Fg(color::Reset)
+        );
+
+        // Arithmetic mode
+        // let config = ConfigBuilder::all_disabled()
+        // .enable_custom_integers(
+        //    tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
+        //    None,
+        // )
+        // .build();
+        // let mut start = Instant::now();
+        // let (client_key, server_key) = generate_keys(config); // integer ctxt
+        // set_server_key(server_key);
+        // let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
+        // println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
+
+        // Client encrypts their inputs
+        // start = Instant::now();
+        // let mut enc_wire_map =
+        //     EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+        // println!(
+        //     "Encryption done in {} seconds.",
+        //     start.elapsed().as_secs_f64()
+        // );
+
+        // for cycle in 0..num_cycles {
+        //     start = Instant::now();
+        //     enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+        //     println!(
+        //         "Cycle {}) Evaluation done in {} seconds.\n",
+        //         cycle,
+        //         start.elapsed().as_secs_f64()
+        //     );
+        // }
+
+        // // Client decrypts the output of the circuit
+        // start = Instant::now();
+        // println!("Encrypted Evaluation:");
+        // EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+        // println!(
+        //     "Decryption done in {} seconds.",
+        //     start.elapsed().as_secs_f64()
+        // );
     } else {
         println!(
             "{} -- LUTs mode -- {}",
