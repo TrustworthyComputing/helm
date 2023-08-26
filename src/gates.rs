@@ -36,6 +36,7 @@ pub enum GateType {
     ConstZero, // zero(out);
     Mult,      // mult ID(in0, in1, out);
     Add,       // add  ID(in0, in1, out);
+    Sub,       // sub  ID(in0, in1, out);
 }
 
 #[derive(Clone)]
@@ -151,6 +152,8 @@ impl Gate {
                 input_values.iter().product()
             } else if self.gate_type == GateType::Add {
                 input_values.iter().sum()
+            } else if self.gate_type == GateType::Sub {
+                input_values.iter().fold(0, |diff, &x| diff - x)
             } else {
                 0
             }
@@ -186,6 +189,7 @@ impl Gate {
             }
             GateType::Mult => input_values[0],
             GateType::Add => input_values[0],
+            GateType::Sub => input_values[0],
             GateType::Mux => {
                 let select = input_values[2];
                 (select && input_values[0]) || (!select && input_values[1])
@@ -223,6 +227,7 @@ impl Gate {
             GateType::Lut => panic!("Can't mix LUTs with Boolean gates!"),
             GateType::Add => panic!("Add gates can't be mixed with Boolean ops!"),
             GateType::Mult => panic!("Mult gates can't be mixed with Boolean ops!"),
+            GateType::Sub => panic!("Sub gates can't be mixed with Boolean ops!"),
             GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
             GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
             GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
@@ -308,6 +313,34 @@ impl Gate {
             }
         }
         ct1 + pt1
+    }
+
+    pub fn evaluate_encrypted_sub_block(
+        &mut self,
+        ct1: &FheUint32,
+        ct2: &FheUint32,
+        cycle: usize,
+    ) -> FheUint32 {
+        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_multibit_output;
+            }
+        }
+        ct1 - ct2
+    }
+
+    pub fn evaluate_encrypted_sub_block_plain(
+        &mut self,
+        ct1: &FheUint32,
+        pt1: u32,
+        cycle: usize,
+    ) -> FheUint32 {
+        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+            if self.cycle == cycle {
+                return encrypted_multibit_output;
+            }
+        }
+        ct1 - pt1
     }
 
     pub fn evaluate_encrypted_dff(

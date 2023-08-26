@@ -5,6 +5,7 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     sync::{Arc, RwLock},
     vec,
+    default::Default,
 };
 use termion::color;
 use tfhe::{
@@ -223,26 +224,32 @@ impl<'a> Circuit<'a> {
         self.ordered_gates.clear();
     }
 
-    pub fn initialize_wire_map(
+    pub fn initialize_wire_map<T: Default + Clone>(
         &self,
-        wire_map_im: &HashMap<String, bool>,
-        user_inputs: &HashMap<String, bool>,
-    ) -> HashMap<String, bool> {
-        let mut wire_map = wire_map_im.clone();
+        wire_map_im: &HashMap<String, T>,
+        user_inputs: &HashMap<String, T>,
+    ) -> HashMap<String, T> {
+        let mut wire_map = HashMap::new();
+        for (key, value) in wire_map_im.into_iter() {
+            wire_map.insert(key.clone(), value.clone());
+        }
         for input_wire in self.input_wires {
             // if no inputs are provided, initialize it to false
             if user_inputs.is_empty() {
-                wire_map.insert(input_wire.to_string(), false);
+                wire_map.insert(input_wire.to_string(), T::default());
             } else if !user_inputs.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not in input wires!", input_wire);
             } else {
-                wire_map.insert(input_wire.to_string(), user_inputs[input_wire]);
+                if let Some(user_value) = user_inputs.get(input_wire) {
+                    wire_map.insert(input_wire.to_string(), user_value.clone());
+                } else {
+                    panic!("\n Input wire \"{}\" not in input wires!", input_wire);
+                }
             }
         }
         for wire in self.dff_outputs {
-            wire_map.insert(wire.to_string(), false);
+            wire_map.insert(wire.to_string(), T::default());
         }
-
         wire_map
     }
 
@@ -684,6 +691,9 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
                         };
                         if gate.get_gate_type() == GateType::Add {
                             gate.evaluate_encrypted_add_block_plain(&ct_op, ptxt_operand, cycle)
+                        } else if gate.get_gate_type() == GateType::Sub {
+                            gate.evaluate_encrypted_sub_block_plain(&ct_op, 
+                                ptxt_operand, cycle)
                         } else {
                             gate.evaluate_encrypted_mul_block_plain(&ct_op, ptxt_operand, cycle)
                         }
@@ -706,9 +716,14 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
                         .collect();
                     output_value = {
                         if gate.get_gate_type() == GateType::Add {
-                            gate.evaluate_encrypted_add_block(&input_values[0], &input_values[1], cycle)
+                            gate.evaluate_encrypted_add_block(&input_values[0], 
+                                &input_values[1], cycle)
+                        } else if gate.get_gate_type() == GateType::Sub {
+                            gate.evaluate_encrypted_sub_block(&input_values[0],
+                                &input_values[1], cycle)
                         } else {
-                            gate.evaluate_encrypted_mul_block(&input_values[0], &input_values[1], cycle)
+                            gate.evaluate_encrypted_mul_block(&input_values[0],
+                                &input_values[1], cycle)
                         }
                     };
                 }

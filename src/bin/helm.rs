@@ -164,17 +164,17 @@ fn main() {
         );
 
         // Arithmetic mode
-        // let config = ConfigBuilder::all_disabled()
-        // .enable_custom_integers(
-        //    tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
-        //    None,
-        // )
-        // .build();
-        // let mut start = Instant::now();
-        // let (client_key, server_key) = generate_keys(config); // integer ctxt
-        // set_server_key(server_key);
-        // let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
-        // println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
+        let config = ConfigBuilder::all_disabled()
+        .enable_custom_integers(
+           tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
+           None,
+        )
+        .build();
+        let mut start = Instant::now();
+        let (client_key, server_key) = generate_keys(config); // integer ctxt
+        set_server_key(server_key.clone());
+        let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
+        println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
         // Client encrypts their inputs
         // start = Instant::now();
