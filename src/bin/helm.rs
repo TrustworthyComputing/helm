@@ -1,12 +1,10 @@
 use clap::{Arg, ArgAction, Command};
 use debug_print::debug_println;
 use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, fmt::Debug, str::FromStr, time::Instant};
 use termion::color;
 use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_4_CARRY_0};
-use tfhe::{generate_keys, set_server_key, ConfigBuilder};
-use std::str::FromStr;
-use std::fmt::Debug;
+use tfhe::{generate_keys, ConfigBuilder};
 
 fn parse_args() -> (String, usize, bool, bool, Option<String>) {
     let matches = Command::new("HELM")
@@ -55,70 +53,83 @@ fn parse_args() -> (String, usize, bool, bool, Option<String>) {
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
     let verbose = matches.get_flag("verbose");
     let arith_mode = matches.get_flag("arithmetic");
-    (file_name.to_string(), num_cycles, verbose, arith_mode, matches.get_one::<String>("wires").cloned())
+    let wires_file = matches.get_one::<String>("wires").cloned();
 
+    // TODO: Add support for this.
+    if arith_mode && num_cycles > 1 {
+        panic!("Arithmetic does not currently support sequential. Set num_cycles to 1.");
+    }
+
+    (
+        file_name.to_string(),
+        num_cycles,
+        verbose,
+        arith_mode,
+        wires_file,
+    )
 }
 
-fn get_input_wire_map<T>(wires: Option<String>) -> HashMap<String, T> 
+fn get_input_wire_map<T>(wire_file: Option<String>) -> HashMap<String, T>
 where
-T: FromStr,
-T::Err: Debug,
+    T: FromStr,
+    T::Err: Debug,
 {
-    let input_wire_map = {
-        let wire_file_name = wires.unwrap_or("None".to_string());
-        if wire_file_name != "None" {
-            verilog_parser::read_input_wires::<T>(&wire_file_name)
-        } else {
-            println!(
-                "{}[!]{} No CSV file provided for the input wires,
-                they will be initialized to false.",
-                color::Fg(color::LightYellow),
-                color::Fg(color::Reset)
-            ); 
-            HashMap::new()
-        }
-    };
-    input_wire_map
+    if let Some(wire_file_name) = &wire_file {
+        return verilog_parser::read_input_wires::<T>(wire_file_name);
+    }
+
+    println!(
+        "{}[!]{} No CSV file provided for the input wires, they will be initialized to false.",
+        color::Fg(color::LightYellow),
+        color::Fg(color::Reset)
+    );
+
+    HashMap::new()
 }
+
 fn main() {
     ascii::print_art();
     let (file_name, num_cycles, verbose, arith_mode, wire_file) = parse_args();
-    let input_wire_map_bool : HashMap<String, bool>;
-    let input_wire_map_int : HashMap<String, u32>;
+    // TODO: combine these
+    let input_wire_map_bool;
+    let input_wire_map_int;
     if arith_mode {
         println!(
             "{} -- Arithmetic mode -- {}",
             color::Fg(color::LightYellow),
             color::Fg(color::Reset)
         );
+
         input_wire_map_int = get_input_wire_map::<u32>(wire_file);
-        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, _, _, _) =
-        verilog_parser::read_verilog_file::<u32>(&file_name, true);
+        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, _, _) =
+            verilog_parser::read_verilog_file::<u32>(&file_name, true);
         let mut circuit_ptxt =
-        circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
+            circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
+
+        // TODO: move this check in the parser
         if gates_set.is_empty() {
             panic!(
                 "{}[!]{} Parser error, no arithmetic gates detected.",
                 color::Fg(color::LightRed),
                 color::Fg(color::Reset)
             );
-        }    
+        }
         circuit_ptxt.sort_circuit();
         circuit_ptxt.compute_levels();
         #[cfg(debug_assertions)]
         circuit_ptxt.print_level_map();
-        debug_println!();    
+        debug_println!();
         // Initialization of inputs
-        let mut wire_map = circuit_ptxt.initialize_wire_map::<u32>(&wire_map_im, &input_wire_map_int);
-        debug_println!("before eval wire_map: {:?}", wire_map);
+        // let wire_map = circuit_ptxt.initialize_wire_map::<u32>(&wire_map_im, &input_wire_map_int);
+        // debug_println!("before eval wire_map: {:?}", wire_map);
 
         // Arithmetic mode
         let config = ConfigBuilder::all_disabled()
-        .enable_custom_integers(
-           tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
-           None,
-        )
-        .build();
+            .enable_custom_integers(
+                tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
+                None,
+            )
+            .build();
         let mut start = Instant::now();
         let (client_key, server_key) = generate_keys(config); // integer ctxt
         let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
@@ -133,15 +144,13 @@ fn main() {
             start.elapsed().as_secs_f64()
         );
 
-        for cycle in 0..num_cycles {
-            start = Instant::now();
-            enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
-            println!(
-                "Cycle {}) Evaluation done in {} seconds.\n",
-                cycle,
-                start.elapsed().as_secs_f64()
-            );
-        }
+        // TODO: Add cycles here
+        start = Instant::now();
+        enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+        println!(
+            "Evaluation done in {} seconds.\n",
+            start.elapsed().as_secs_f64()
+        );
 
         // Client decrypts the output of the circuit
         start = Instant::now();
@@ -153,10 +162,11 @@ fn main() {
         );
     } else {
         input_wire_map_bool = get_input_wire_map::<bool>(wire_file);
-        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, is_sequential, has_luts, _) =
-        verilog_parser::read_verilog_file::<bool>(&file_name,false);
+        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, has_luts, _) =
+            verilog_parser::read_verilog_file::<bool>(&file_name, false);
+        let is_sequential = dff_outputs.len() > 1;
         let mut circuit_ptxt =
-        circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
+            circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
         if num_cycles > 1 && !is_sequential {
             panic!(
                 "{}[!]{} Cannot run combinational circuit for more than one cycles.",
@@ -176,10 +186,11 @@ fn main() {
         circuit_ptxt.compute_levels();
         #[cfg(debug_assertions)]
         circuit_ptxt.print_level_map();
-        debug_println!();         
-        
+        debug_println!();
+
         // Initialization of inputs
-        let mut wire_map = circuit_ptxt.initialize_wire_map::<bool>(&wire_map_im, &input_wire_map_bool);
+        let mut wire_map =
+            circuit_ptxt.initialize_wire_map::<bool>(&wire_map_im, &input_wire_map_bool);
         debug_println!("before eval wire_map: {:?}", wire_map);
 
         // Plaintext evaluation
@@ -227,7 +238,7 @@ fn main() {
                     start.elapsed().as_secs_f64()
                 );
             }
-            
+
             // Client decrypts the output of the circuit
             start = Instant::now();
             println!("Encrypted Evaluation:");
@@ -236,19 +247,19 @@ fn main() {
                 "Decryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
             );
-        } else { 
+        } else {
             println!(
                 "{} -- LUTs mode -- {}",
                 color::Fg(color::LightYellow),
                 color::Fg(color::Reset)
             );
-    
+
             // LUT mode
             let mut start = Instant::now();
             let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_4_CARRY_0); // single bit ctxt
             let mut circuit = circuit::LutCircuit::new(client_key, server_key, circuit_ptxt);
             println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
-    
+
             // Client encrypts their inputs
             start = Instant::now();
             let mut enc_wire_map =
@@ -257,7 +268,7 @@ fn main() {
                 "Encryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
             );
-    
+
             for cycle in 0..num_cycles {
                 start = Instant::now();
                 enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
@@ -267,7 +278,7 @@ fn main() {
                     start.elapsed().as_secs_f64()
                 );
             }
-    
+
             // Client decrypts the output of the circuit
             start = Instant::now();
             println!("Encrypted Evaluation:");
@@ -275,7 +286,7 @@ fn main() {
             println!(
                 "Decryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
-            );    
+            );
         }
     }
     println!();

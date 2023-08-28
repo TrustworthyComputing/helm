@@ -153,7 +153,7 @@ impl Gate {
             } else if self.gate_type == GateType::Add {
                 input_values.iter().sum()
             } else if self.gate_type == GateType::Sub {
-                input_values.iter().fold(0, |diff, &x| diff - x)
+                input_values[1] - input_values[0]
             } else {
                 0
             }
