@@ -9,6 +9,7 @@ use std::{
 };
 use termion::color;
 use tfhe::{
+    set_server_key,
     prelude::*,
     boolean::prelude::*,
     integer::{
@@ -72,8 +73,8 @@ pub struct LutCircuit<'a> {
 
 pub struct ArithCircuit<'a> {
     circuit: Circuit<'a>,
-    client_key: tfhe::ClientKey,
     server_key: tfhe::ServerKey,
+    client_key: tfhe::ClientKey,
 }
 
 // Note: this is not used as there is no easy way to get LUTs with more than six inputs.
@@ -111,7 +112,6 @@ impl<'a> Circuit<'a> {
         assert!(!self.gates.is_empty());
         assert!(self.ordered_gates.is_empty());
         let mut wire_status = HashSet::new();
-
         self.input_wires.iter().for_each(|input| {
             wire_status.insert(input.clone());
         });
@@ -136,10 +136,11 @@ impl<'a> Circuit<'a> {
                     ready = true;
                 } else {
                     ready = gate
-                        .get_input_wires()
-                        .iter()
-                        .all(|wire| wire_status.contains(wire));
-
+                    .get_input_wires()
+                    .iter()
+                    .all(|wire| {
+                        wire_status.contains(wire) || wire.parse::<u32>().is_ok()
+                    });                
                     if ready {
                         next_wire_status.insert(gate.get_output_wire());
                         level.push(gate.clone());
@@ -165,13 +166,11 @@ impl<'a> Circuit<'a> {
         // Make sure the sort circuit function has run.
         assert!(self.gates.is_empty());
         assert!(!self.ordered_gates.is_empty());
-
         // Initialization of input_wires to true
         let mut wire_levels = HashMap::new();
         for input in self.input_wires {
             wire_levels.insert(input.to_string(), 0);
         }
-
         for gate in &mut self.ordered_gates {
             if gate.get_gate_type() == GateType::Dff {
                 match self.level_map.entry(std::usize::MAX) {
@@ -190,7 +189,13 @@ impl<'a> Circuit<'a> {
             gate.get_input_wires().iter().for_each(|input| {
                 let input_depth = match wire_levels.get(input) {
                     Some(value) => *value,
-                    None => panic!("Input {} not found in wire_levels", input),
+                    None => {
+                        if input.parse::<u32>().is_ok() {
+                            0
+                        } else {
+                            panic!("Input {} not found in wire_levels", input)
+                        }
+                    }
                 };
                 depth = std::cmp::max(depth, input_depth + 1);
             });
@@ -660,6 +665,7 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
                 // FIXME: Surely there's a better way, fix later
+                set_server_key(self.server_key.clone());
                 let mut is_ptxt_op = false;
                 let output_value;
                 // Identify if any of the input wires are constants
@@ -988,7 +994,7 @@ fn test_gate_evaluation() {
 #[test]
 fn test_evaluate_circuit_parallel() {
     let (gates_set, mut wire_map, input_wires, _, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
 
     let empty = vec![];
     let mut circuit = Circuit::new(gates_set, &input_wires, &empty, &empty);
@@ -1014,7 +1020,7 @@ fn test_evaluate_circuit_parallel() {
 #[test]
 fn test_evaluate_encrypted_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
-        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v");
+        crate::verilog_parser::read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
     let mut ptxt_wire_map = wire_map_im.clone();
 
     let empty = vec![];
@@ -1059,7 +1065,7 @@ fn test_evaluate_encrypted_circuit_parallel() {
 fn test_evaluate_encrypted_lut_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
-            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
+            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v", false
         );
     let input_wire_map =
         crate::verilog_parser::read_input_wires("hdl-benchmarks/test-cases/8-bit-adder.inputs.csv");
@@ -1103,7 +1109,7 @@ fn test_evaluate_encrypted_lut_circuit_parallel() {
 fn test_evaluate_encrypted_high_precision_lut_circuit_parallel() {
     let (gates_set, wire_map_im, input_wires, _, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
-            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v",
+            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v", false
         );
     let input_wire_map =
         crate::verilog_parser::read_input_wires("hdl-benchmarks/test-cases/8-bit-adder.inputs.csv");
