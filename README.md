@@ -54,6 +54,19 @@ cargo run --bin preprocessor --release  \
 cargo run --bin helm --release -- --input ./hdl-benchmarks/processed-netlists/c880.v
 ```
 
+### Example of an Arithmetic circuit
+This mode operates directly on behavioral Verilog files that include only 
+arithmetic operations. There is no need to invoke Yosys to perform any logic 
+synthesis. 
+
+```shell
+cargo run --bin preprocessor --release  \
+    --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+    --input ./hdl-benchmarks/designs/chi_squared.v \
+    --output ./hdl-benchmarks/processed-netlists/chi_squared_arith.v
+cargo run --bin helm --release -- --arithmetic --input ./hdl-benchmarks/processed-netlists/chi_squared_arith.v
+```
+
 <p align="center">
     <img src="./logos/twc.png" height="20%" width="20%">
 </p>

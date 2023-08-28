@@ -14,7 +14,7 @@ use tfhe::{
         wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
     },
     prelude::*,
-    set_server_key,
+    set_server_key, unset_server_key,
     shortint::{
         ciphertext::Ciphertext, wopbs::WopbsKey as WopbsKeyShortInt,
         ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
@@ -663,6 +663,8 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
             .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
             .unzip();
 
+        rayon::broadcast(|_| set_server_key(self.server_key.clone()));
+
         // For each level
         let total_levels = self.circuit.level_map.len();
         for (level, gates) in self
@@ -673,8 +675,7 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
         {
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
-                // FIXME: Surely there's a better way, fix later
-                set_server_key(self.server_key.clone());
+            // set_server_key(self.server_key.clone());
                 let mut is_ptxt_op = false;
                 // Identify if any of the input wires are constants
                 for in_wire in gate.get_input_wires().iter() {
@@ -759,6 +760,7 @@ impl<'a> EvalCircuit<tfhe::FheUint32> for ArithCircuit<'a> {
             });
             println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         }
+        rayon::broadcast(|_| unset_server_key());    
 
         key_to_index
             .iter()
