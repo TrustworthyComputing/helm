@@ -20,7 +20,7 @@ use tfhe::{
         ciphertext::Ciphertext as CtxtShortInt, wopbs::WopbsKey as WopbsKeyShortInt,
         ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
     },
-    unset_server_key, FheUint32,
+    unset_server_key, FheUint16, FheUint32,
 };
 
 #[cfg(test)]
@@ -34,6 +34,8 @@ use tfhe::shortint::parameters::{
 };
 #[cfg(test)]
 use tfhe::{generate_keys, ConfigBuilder};
+
+use crate::{FheType, PtxtType};
 
 pub trait EvalCircuit<P, C> {
     fn encrypt_inputs(
@@ -595,42 +597,62 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for LutCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
+impl<'a> EvalCircuit<u32, FheType> for ArithCircuit<'a> {
     fn encrypt_inputs(
         &mut self,
         wire_map_im: &HashMap<String, u32>,
         input_wire_map: &HashMap<String, u32>,
-    ) -> HashMap<String, FheUint32> {
+    ) -> HashMap<String, FheType> {
+        let is_uint16 = false;
         let mut enc_wire_map = HashMap::<String, _>::new();
         for (wire, &value) in wire_map_im {
             if !is_numeric_string(wire) {
-                enc_wire_map.insert(
-                    wire.to_string(),
-                    FheUint32::try_encrypt(value, &self.client_key).unwrap(),
-                );
+                // TODO
+                let encrypted_value = if is_uint16 {
+                    FheType::Uint16(FheUint16::try_encrypt(value, &self.client_key).unwrap())
+                } else {
+                    FheType::Uint32(FheUint32::try_encrypt(value, &self.client_key).unwrap())
+                };
+
+                enc_wire_map.insert(wire.to_string(), encrypted_value);
             }
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
             if input_wire_map.is_empty() {
-                enc_wire_map.insert(
-                    input_wire.to_string(),
-                    FheUint32::try_encrypt(0, &self.client_key).unwrap(),
-                );
+                let encrypted_value = if is_uint16 {
+                    FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap())
+                } else {
+                    FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap())
+                };
+
+                enc_wire_map.insert(input_wire.to_string(), encrypted_value);
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
             } else {
-                enc_wire_map.insert(
-                    input_wire.to_string(),
-                    FheUint32::try_encrypt(input_wire_map[input_wire], &self.client_key).unwrap(),
-                );
+                let encrypted_value = if is_uint16 {
+                    FheType::Uint16(
+                        FheUint16::try_encrypt(input_wire_map[input_wire], &self.client_key)
+                            .unwrap(),
+                    )
+                } else {
+                    FheType::Uint32(
+                        FheUint32::try_encrypt(input_wire_map[input_wire], &self.client_key)
+                            .unwrap(),
+                    )
+                };
+
+                enc_wire_map.insert(input_wire.to_string(), encrypted_value);
             }
         }
         for wire in self.circuit.dff_outputs {
-            enc_wire_map.insert(
-                wire.to_string(),
-                FheUint32::try_encrypt(0, &self.client_key).unwrap(),
-            );
+            let encrypted_value = if is_uint16 {
+                FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap())
+            } else {
+                FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap())
+            };
+
+            enc_wire_map.insert(wire.to_string(), encrypted_value);
         }
 
         enc_wire_map
@@ -638,9 +660,9 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
 
     fn evaluate_encrypted(
         &mut self,
-        enc_wire_map: &HashMap<String, FheUint32>,
+        enc_wire_map: &HashMap<String, FheType>,
         cycle: usize,
-    ) -> HashMap<String, FheUint32> {
+    ) -> HashMap<String, FheType> {
         // Make sure the sort circuit function has run.
         assert!(self.circuit.gates.is_empty());
         // Make sure the compute_levels function has run.
@@ -662,6 +684,9 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
             .iter_mut()
             .sorted_by_key(|(level, _)| *level)
         {
+            // TODO
+            let is_uint16 = false;
+
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
                 let mut is_ptxt_op = false;
@@ -673,11 +698,21 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
                 }
                 let output_value = {
                     if is_ptxt_op {
-                        let mut ptxt_operand = 0;
-                        let mut ctxt_operand: Option<FheUint32> = None;
+                        let mut ptxt_operand = if is_uint16 {
+                            PtxtType::Uint16(0)
+                        } else {
+                            PtxtType::Uint32(0)
+                        };
+                        let mut ctxt_operand: Option<FheType> = None;
                         for in_wire in gate.get_input_wires().iter() {
                             if is_numeric_string(in_wire) {
-                                ptxt_operand = in_wire.parse::<u32>().unwrap_or(0);
+                                if is_uint16 {
+                                    ptxt_operand =
+                                        in_wire.parse::<PtxtType>().unwrap_or(PtxtType::Uint16(0));
+                                } else {
+                                    ptxt_operand =
+                                        in_wire.parse::<PtxtType>().unwrap_or(PtxtType::Uint32(0));
+                                };
                             } else {
                                 let index = match key_to_index.get(in_wire) {
                                     Some(&index) => index,
@@ -701,7 +736,7 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
                             gate.evaluate_encrypted_mul_block_plain(&ct_op, ptxt_operand, cycle)
                         }
                     } else {
-                        let input_values: Vec<FheUint32> = gate
+                        let input_values: Vec<FheType> = gate
                             .get_input_wires()
                             .iter()
                             .map(|input| {
@@ -756,7 +791,7 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
             .collect()
     }
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, FheUint32>, verbose: bool) {
+    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, FheType>, verbose: bool) {
         for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
             if i > 10 && !verbose {
                 println!(
@@ -766,7 +801,8 @@ impl<'a> EvalCircuit<u32, FheUint32> for ArithCircuit<'a> {
                 );
                 break;
             } else {
-                let decrypted: u32 = enc_wire_map[output_wire].decrypt(&self.client_key);
+                let decrypted =
+                    enc_wire_map[output_wire].decrypt(&self.client_key);
                 println!(" {}: {}", output_wire, decrypted);
             }
         }
@@ -1204,7 +1240,11 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
 
     // Check that the evaluation was correct
     for (wire_name, val) in output_wire_map {
-        assert_eq!(val, enc_wire_map[&wire_name].decrypt(&client_key));
+        match enc_wire_map[&wire_name].decrypt(&client_key) {
+            PtxtType::Uint32(value) => assert_eq!(val, value),
+            PtxtType::Uint16(value) => assert_eq!(val, value as u32),
+            PtxtType::None => panic!("Decrypted shouldn't be None"),
+        };
     }
 
     // Input set 2
@@ -1220,7 +1260,11 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
 
     // Check that the evaluation was correct
     for (wire_name, val) in output_wire_map {
-        assert_eq!(val, enc_wire_map[&wire_name].decrypt(&client_key));
+        match enc_wire_map[&wire_name].decrypt(&client_key) {
+            PtxtType::Uint32(value) => assert_eq!(val, value),
+            PtxtType::Uint16(value) => assert_eq!(val, value as u32),
+            PtxtType::None => panic!("Decrypted shouldn't be None"),
+        };
     }
 
     // Input set 3
@@ -1236,7 +1280,11 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
 
     // Check that the evaluation was correct
     for (wire_name, val) in output_wire_map {
-        assert_eq!(val, enc_wire_map[&wire_name].decrypt(&client_key));
+        match enc_wire_map[&wire_name].decrypt(&client_key) {
+            PtxtType::Uint32(value) => assert_eq!(val, value),
+            PtxtType::Uint16(value) => assert_eq!(val, value as u32),
+            PtxtType::None => panic!("Decrypted shouldn't be None"),
+        };
     }
 
     // Input set 4
@@ -1252,6 +1300,10 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
 
     // Check that the evaluation was correct
     for (wire_name, val) in output_wire_map {
-        assert_eq!(val, enc_wire_map[&wire_name].decrypt(&client_key));
+        match enc_wire_map[&wire_name].decrypt(&client_key) {
+            PtxtType::Uint32(value) => assert_eq!(val, value),
+            PtxtType::Uint16(value) => assert_eq!(val, value as u32),
+            PtxtType::None => panic!("Decrypted shouldn't be None"),
+        };
     }
 }

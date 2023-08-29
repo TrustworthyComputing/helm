@@ -16,8 +16,9 @@ use tfhe::{
         wopbs::WopbsKey as WopbsKeyShortInt, Ciphertext as CiphertextBase,
         ServerKey as ServerKeyShortInt,
     },
-    FheUint32,
 };
+
+use crate::{FheType, PtxtType};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateType {
@@ -52,7 +53,7 @@ pub struct Gate {
     multibit_output: Option<u64>,
     encrypted_gate_output: Option<Ciphertext>,
     encrypted_lut_output: Option<CiphertextBase>,
-    encrypted_multibit_output: Option<FheUint32>,
+    encrypted_multibit_output: FheType,
 }
 
 impl Eq for Gate {}
@@ -117,7 +118,7 @@ impl Gate {
             multibit_output: None,
             encrypted_gate_output: None,
             encrypted_lut_output: None,
-            encrypted_multibit_output: None,
+            encrypted_multibit_output: FheType::None,
         }
     }
 
@@ -256,91 +257,147 @@ impl Gate {
             }
         }
 
+        // TODO(@cgouert): encrypted_lut_output needs to be updated
+
         lut(server_key, self.lut_const.as_ref().unwrap(), input_values)
     }
 
     pub fn evaluate_encrypted_mul_block(
         &mut self,
-        ct1: &FheUint32,
-        ct2: &FheUint32,
+        ct1: &FheType,
+        ct2: &FheType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 * ct2
+
+        match (ct1, ct2) {
+            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
+                FheType::Uint32(ct1_value * ct2_value)
+            }
+            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
+                FheType::Uint16(ct1_value * ct2_value)
+            }
+            _ => panic!("evaluate_encrypted_mul_block"),
+        }
     }
 
     pub fn evaluate_encrypted_mul_block_plain(
         &mut self,
-        ct1: &FheUint32,
-        pt1: u32,
+        ct1: &FheType,
+        pt1: PtxtType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 * pt1
+
+        match (ct1, pt1) {
+            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
+                FheType::Uint32(ct1_value * pt1_value)
+            }
+            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
+                FheType::Uint16(ct1_value * pt1_value)
+            }
+            _ => panic!("evaluate_encrypted_mul_block_plain"),
+        }
     }
 
     pub fn evaluate_encrypted_add_block(
         &mut self,
-        ct1: &FheUint32,
-        ct2: &FheUint32,
+        ct1: &FheType,
+        ct2: &FheType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 + ct2
+
+        match (ct1, ct2) {
+            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
+                FheType::Uint32(ct1_value + ct2_value)
+            }
+            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
+                FheType::Uint16(ct1_value + ct2_value)
+            }
+            _ => panic!("evaluate_encrypted_add_block"),
+        }
     }
 
     pub fn evaluate_encrypted_add_block_plain(
         &mut self,
-        ct1: &FheUint32,
-        pt1: u32,
+        ct1: &FheType,
+        pt1: PtxtType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 + pt1
+
+        match (ct1, pt1) {
+            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
+                FheType::Uint32(ct1_value + pt1_value)
+            }
+            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
+                FheType::Uint16(ct1_value + pt1_value)
+            }
+            _ => panic!("evaluate_encrypted_add_block_plain"),
+        }
     }
 
     pub fn evaluate_encrypted_sub_block(
         &mut self,
-        ct1: &FheUint32,
-        ct2: &FheUint32,
+        ct1: &FheType,
+        ct2: &FheType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 - ct2
+
+        match (ct1, ct2) {
+            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
+                FheType::Uint32(ct1_value - ct2_value)
+            }
+            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
+                FheType::Uint16(ct1_value - ct2_value)
+            }
+            _ => panic!("evaluate_encrypted_sub_block"),
+        }
     }
 
     pub fn evaluate_encrypted_sub_block_plain(
         &mut self,
-        ct1: &FheUint32,
-        pt1: u32,
+        ct1: &FheType,
+        pt1: PtxtType,
         cycle: usize,
-    ) -> FheUint32 {
-        if let Some(encrypted_multibit_output) = self.encrypted_multibit_output.clone() {
+    ) -> FheType {
+        if let FheType::None = self.encrypted_multibit_output {
             if self.cycle == cycle {
-                return encrypted_multibit_output;
+                return self.encrypted_multibit_output.clone();
             }
         }
-        ct1 - pt1
+
+        match (ct1, pt1) {
+            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
+                FheType::Uint32(ct1_value - pt1_value)
+            }
+            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
+                FheType::Uint16(ct1_value - pt1_value)
+            }
+            _ => panic!("evaluate_encrypted_sub_block_plain"),
+        }
     }
 
     pub fn evaluate_encrypted_dff(

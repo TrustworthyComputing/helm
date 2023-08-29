@@ -1,12 +1,12 @@
-use clap::{Arg, ArgAction, Command};
+use clap::{{Arg, ArgAction, Command}, builder::PossibleValue};
 use debug_print::debug_println;
-use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
-use std::{collections::HashMap, fmt::Debug, str::FromStr, time::Instant};
+use helm::{ascii, circuit, circuit::EvalCircuit, get_input_wire_map, verilog_parser, PtxtType};
+use std::time::Instant;
 use termion::color;
 use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_4_CARRY_0};
 use tfhe::{generate_keys, ConfigBuilder};
 
-fn parse_args() -> (String, usize, bool, bool, Option<String>) {
+fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
     let matches = Command::new("HELM")
         .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
         .arg(
@@ -41,10 +41,17 @@ fn parse_args() -> (String, usize, bool, bool, Option<String>) {
         )
         .arg(
             Arg::new("arithmetic")
-                .short('a')
                 .long("arithmetic")
-                .help("Enable arithmetic mode")
-                .action(ArgAction::SetTrue),
+                .value_name("TYPE")
+                .help("Datatype for arithmetic evaluation")
+                .value_parser([
+                    // PossibleValue::new("u8"),
+                    // PossibleValue::new("u16"),
+                    PossibleValue::new("u32"),
+                    // PossibleValue::new("u64"),
+                    // PossibleValue::new("u128"),
+                ])
+                .required(false)
         )
         .get_matches();
     let file_name = matches
@@ -52,51 +59,37 @@ fn parse_args() -> (String, usize, bool, bool, Option<String>) {
         .expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
     let verbose = matches.get_flag("verbose");
-    let arith_mode = matches.get_flag("arithmetic");
     let wires_file = matches.get_one::<String>("wires").cloned();
+    let arithmetic = matches.get_one::<String>("arithmetic").cloned();
 
     // TODO: Add support for this.
-    if arith_mode && num_cycles > 1 {
-        panic!("Arithmetic does not currently support sequential. Set num_cycles to 1.");
+    // If it's arithmetic and the num_cycles variable has been set
+    if let Some(_) = arithmetic {
+        if num_cycles > 1 {
+            panic!("Arithmetic does not currently support sequential. Set num_cycles to 1.");
+        }
     }
 
     (
         file_name.to_string(),
         num_cycles,
         verbose,
-        arith_mode,
+        arithmetic,
         wires_file,
     )
 }
 
-fn get_input_wire_map<T>(wire_file: Option<String>) -> HashMap<String, T>
-where
-    T: FromStr,
-    T::Err: Debug,
-{
-    if let Some(wire_file_name) = &wire_file {
-        return verilog_parser::read_input_wires::<T>(wire_file_name);
-    }
-
-    println!(
-        "{}[!]{} No CSV file provided for the input wires, they will be initialized to false.",
-        color::Fg(color::LightYellow),
-        color::Fg(color::Reset)
-    );
-
-    HashMap::new()
-}
-
 fn main() {
     ascii::print_art();
-    let (file_name, num_cycles, verbose, arith_mode, wire_file) = parse_args();
+    let (file_name, num_cycles, verbose, arithmetic, wire_file) = parse_args();
     // TODO: combine these
     let input_wire_map_bool;
     let input_wire_map_int;
-    if arith_mode {
+    if let Some(arithmetic_type) = arithmetic {
         println!(
-            "{} -- Arithmetic mode -- {}",
+            "{} -- Arithmetic mode with {} -- {}",
             color::Fg(color::LightYellow),
+            arithmetic_type,
             color::Fg(color::Reset)
         );
 
@@ -119,9 +112,6 @@ fn main() {
         #[cfg(debug_assertions)]
         circuit_ptxt.print_level_map();
         debug_println!();
-        // Initialization of inputs
-        // let wire_map = circuit_ptxt.initialize_wire_map::<u32>(&wire_map_im, &input_wire_map_int);
-        // debug_println!("before eval wire_map: {:?}", wire_map);
 
         // Arithmetic mode
         let config = ConfigBuilder::all_disabled()
