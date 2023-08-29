@@ -165,7 +165,7 @@ impl Gate {
 
     pub fn evaluate(&mut self, input_values: &[PtxtType]) -> PtxtType {
         self.output = match self.gate_type {
-            GateType::Dff => input_values[0].clone(),
+            GateType::Dff => input_values[0],
             GateType::And => PtxtType::Bool(input_values.iter().all(|v| match v {
                 PtxtType::Bool(b) => *b,
                 _ => panic!("Expected PtxtType::Bool variant"),
@@ -193,14 +193,12 @@ impl Gate {
             GateType::Mult => input_values[0],
             GateType::Add => input_values[0],
             GateType::Sub => input_values[0],
-            GateType::Mux => {
-                match (&input_values[2], &input_values[0], &input_values[1]) {
-                    (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
-                        PtxtType::Bool((*select && *in_0) || (!select && *in_1))
-                    }
-                    _ => unreachable!(),
+            GateType::Mux => match (&input_values[2], &input_values[0], &input_values[1]) {
+                (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
+                    PtxtType::Bool((*select && *in_0) || (!select && *in_1))
                 }
-            }
+                _ => unreachable!(),
+            },
             GateType::Nand => PtxtType::Bool(!input_values.iter().all(|v| match v {
                 PtxtType::Bool(b) => *b,
                 _ => panic!("Expected PtxtType::Bool variant"),
@@ -217,20 +215,34 @@ impl Gate {
                 PtxtType::Bool(b) => *b,
                 _ => panic!("Expected PtxtType::Bool variant"),
             })),
-            GateType::Xnor => PtxtType::Bool(input_values.iter().filter(|&v| match v {
-                PtxtType::Bool(b) => *b,
-                _ => panic!("Expected PtxtType::Bool variant"),
-            }).count() % 2 != 1),
-            GateType::Xor => PtxtType::Bool(input_values.iter().filter(|&v| match v {
-                PtxtType::Bool(b) => *b,
-                _ => panic!("Expected PtxtType::Bool variant"),
-            }).count() % 2 == 1),
+            GateType::Xnor => PtxtType::Bool(
+                input_values
+                    .iter()
+                    .filter(|&v| match v {
+                        PtxtType::Bool(b) => *b,
+                        _ => panic!("Expected PtxtType::Bool variant"),
+                    })
+                    .count()
+                    % 2
+                    != 1,
+            ),
+            GateType::Xor => PtxtType::Bool(
+                input_values
+                    .iter()
+                    .filter(|&v| match v {
+                        PtxtType::Bool(b) => *b,
+                        _ => panic!("Expected PtxtType::Bool variant"),
+                    })
+                    .count()
+                    % 2
+                    == 1,
+            ),
             GateType::Buf => input_values[0],
             GateType::ConstOne => PtxtType::Bool(true),
             GateType::ConstZero => PtxtType::Bool(false),
         };
 
-        self.output.clone()
+        self.output
     }
 
     pub fn evaluate_encrypted(
@@ -282,9 +294,10 @@ impl Gate {
             }
         }
 
-        // TODO(@cgouert): encrypted_lut_output needs to be updated
+        let ret = lut(server_key, self.lut_const.as_ref().unwrap(), input_values);
+        self.encrypted_lut_output = Some(ret.clone());
 
-        lut(server_key, self.lut_const.as_ref().unwrap(), input_values)
+        ret
     }
 
     pub fn evaluate_encrypted_mul_block(

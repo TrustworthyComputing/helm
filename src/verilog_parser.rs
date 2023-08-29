@@ -226,13 +226,13 @@ pub fn read_verilog_file(
                 match ptxt_type {
                     "bool" => {
                         wire_map.insert(gate.get_output_wire(), PtxtType::Bool(false));
-                    },
+                    }
                     "u16" => {
                         wire_map.insert(gate.get_output_wire(), PtxtType::Uint16(0));
-                    },
+                    }
                     "u32" => {
                         wire_map.insert(gate.get_output_wire(), PtxtType::Uint32(0));
-                    },
+                    }
                     _ => unreachable!(),
                 }
                 gates.insert(gate);
@@ -269,15 +269,15 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
             "bool" => {
                 let init_value = record[1].trim().to_string().parse::<bool>().unwrap();
                 input_map.insert(input_wire, PtxtType::Bool(init_value));
-            },
+            }
             "u16" => {
                 let init_value = record[1].trim().to_string().parse::<u16>().unwrap();
                 input_map.insert(input_wire, PtxtType::Uint16(init_value));
-            },
+            }
             "u32" => {
                 let init_value = record[1].trim().to_string().parse::<u32>().unwrap();
                 input_map.insert(input_wire, PtxtType::Uint32(init_value));
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -287,8 +287,11 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) =
-        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false, "bool");
+    let (gates, wire_map, inputs, _, _, _, _) = read_verilog_file(
+        "hdl-benchmarks/processed-netlists/2-bit-adder.v",
+        false,
+        "bool",
+    );
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
@@ -297,8 +300,11 @@ fn test_parser() {
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) =
-        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false, "bool");
+    let (_, _, inputs, _, _, _, _) = read_verilog_file(
+        "hdl-benchmarks/processed-netlists/2-bit-adder.v",
+        false,
+        "bool",
+    );
 
     let input_wires_map =
         read_input_wires("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv", "bool");
@@ -313,11 +319,14 @@ fn test_input_wires_parser() {
 fn test_input_wires_arithmetic_parser() {
     let (_, _, inputs, _, _, _, _) = read_verilog_file(
         "hdl-benchmarks/processed-netlists/chi_squared_arith.v",
-        true, "u32"
+        true,
+        "u32",
     );
 
-    let input_wires_map =
-        read_input_wires("hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv", "u32");
+    let input_wires_map = read_input_wires(
+        "hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv",
+        "u32",
+    );
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {

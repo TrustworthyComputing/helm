@@ -3,7 +3,6 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    default::Default,
     sync::{Arc, RwLock},
     vec,
 };
@@ -37,17 +36,18 @@ use tfhe::{generate_keys, ConfigBuilder};
 
 use crate::{FheType, PtxtType};
 
-pub trait EvalCircuit<P, C> {
+pub trait EvalCircuit<C> {
     fn encrypt_inputs(
         &mut self,
-        wire_map_im: &HashMap<String, P>,
-        input_wire_map: &HashMap<String, P>,
+        wire_map_im: &HashMap<String, PtxtType>,
+        input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, C>;
 
     fn evaluate_encrypted(
         &mut self,
         enc_wire_map: &HashMap<String, C>,
         current_cycle: usize,
+        ptxt_type: &str,
     ) -> HashMap<String, C>;
 
     fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, C>, verbose: bool);
@@ -230,30 +230,65 @@ impl<'a> Circuit<'a> {
         self.ordered_gates.clear();
     }
 
-    pub fn initialize_wire_map<T: Default + Clone>(
+    pub fn initialize_wire_map(
         &self,
-        wire_map_im: &HashMap<String, T>,
-        user_inputs: &HashMap<String, T>,
-    ) -> HashMap<String, T> {
+        wire_map_im: &HashMap<String, PtxtType>,
+        user_inputs: &HashMap<String, PtxtType>,
+        ptxt_type: &str,
+    ) -> HashMap<String, PtxtType> {
         let mut wire_map = HashMap::new();
         for (key, value) in wire_map_im.iter() {
-            wire_map.insert(key.clone(), value.clone());
+            wire_map.insert(key.clone(), *value);
         }
         for input_wire in self.input_wires {
             // if no inputs are provided, initialize it to false
             if user_inputs.is_empty() {
-                wire_map.insert(input_wire.to_string(), T::default());
+                match ptxt_type {
+                    "bool" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::Bool(false));
+                    }
+                    "u16" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::Uint16(0));
+                    }
+                    "u32" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::Uint32(0));
+                    }
+                    _ => unreachable!(),
+                }
             } else if !user_inputs.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not in input wires!", input_wire);
             } else if let Some(user_value) = user_inputs.get(input_wire) {
-                wire_map.insert(input_wire.to_string(), user_value.clone());
+                match ptxt_type {
+                    "bool" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
+                    "u16" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
+                    "u32" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
+                    _ => unreachable!(),
+                }
             } else {
                 panic!("\n Input wire \"{}\" not in input wires!", input_wire);
             }
         }
         for wire in self.dff_outputs {
-            wire_map.insert(wire.to_string(), T::default());
+            match ptxt_type {
+                "bool" => {
+                    wire_map.insert(wire.to_string(), PtxtType::Bool(false));
+                }
+                "u16" => {
+                    wire_map.insert(wire.to_string(), PtxtType::Uint16(0));
+                }
+                "u32" => {
+                    wire_map.insert(wire.to_string(), PtxtType::Uint32(0));
+                }
+                _ => unreachable!(),
+            }
         }
+
         wire_map
     }
 
@@ -266,12 +301,7 @@ impl<'a> Circuit<'a> {
         }
     }
 
-    // TODO(@cgouert): add support for u32 as well
-    pub fn evaluate(
-        &mut self,
-        wire_map: &HashMap<String, PtxtType>,
-        cycle: usize,
-    ) -> HashMap<String, PtxtType> {
+    pub fn evaluate(&mut self, wire_map: &HashMap<String, PtxtType>) -> HashMap<String, PtxtType> {
         // Make sure the sort circuit function has run.
         assert!(self.gates.is_empty());
         // Make sure the compute_levels function has run.
@@ -375,15 +405,20 @@ impl<'a> HighPrecisionLutCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<bool, CtxtBool> for GateCircuit<'a> {
+impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
     fn encrypt_inputs(
         &mut self,
-        wire_map_im: &HashMap<String, bool>,
-        input_wire_map: &HashMap<String, bool>,
+        wire_map_im: &HashMap<String, PtxtType>,
+        input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, CtxtBool> {
         let mut enc_wire_map = HashMap::<String, _>::new();
         for (wire, &value) in wire_map_im {
-            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(value));
+            match value {
+                PtxtType::Bool(v) => {
+                    enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(v));
+                }
+                _ => unreachable!(),
+            }
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
@@ -392,10 +427,12 @@ impl<'a> EvalCircuit<bool, CtxtBool> for GateCircuit<'a> {
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not in input wires!", input_wire);
             } else {
-                enc_wire_map.insert(
-                    input_wire.to_string(),
-                    self.client_key.encrypt(input_wire_map[input_wire]),
-                );
+                match input_wire_map[input_wire] {
+                    PtxtType::Bool(v) => {
+                        enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt(v));
+                    }
+                    _ => unreachable!(),
+                }
             }
         }
         for wire in self.circuit.dff_outputs {
@@ -409,6 +446,7 @@ impl<'a> EvalCircuit<bool, CtxtBool> for GateCircuit<'a> {
         &mut self,
         enc_wire_map: &HashMap<String, CtxtBool>,
         cycle: usize,
+        _ptxt_type: &str,
     ) -> HashMap<String, CtxtBool> {
         // Make sure the sort circuit function has run.
         assert!(self.circuit.gates.is_empty());
@@ -482,15 +520,20 @@ impl<'a> EvalCircuit<bool, CtxtBool> for GateCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<bool, CtxtShortInt> for LutCircuit<'a> {
+impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
     fn encrypt_inputs(
         &mut self,
-        wire_map_im: &HashMap<String, bool>,
-        input_wire_map: &HashMap<String, bool>,
+        wire_map_im: &HashMap<String, PtxtType>,
+        input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, CtxtShortInt> {
         let mut enc_wire_map = HashMap::<String, _>::new();
         for (wire, &value) in wire_map_im {
-            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(value as u64));
+            match value {
+                PtxtType::Bool(v) => {
+                    enc_wire_map.insert(wire.to_string(), self.client_key.encrypt(v as u64));
+                }
+                _ => unreachable!(),
+            }
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
@@ -499,10 +542,13 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for LutCircuit<'a> {
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
             } else {
-                enc_wire_map.insert(
-                    input_wire.to_string(),
-                    self.client_key.encrypt(input_wire_map[input_wire] as u64),
-                );
+                match input_wire_map[input_wire] {
+                    PtxtType::Bool(v) => {
+                        enc_wire_map
+                            .insert(input_wire.to_string(), self.client_key.encrypt(v as u64));
+                    }
+                    _ => unreachable!(),
+                }
             }
         }
         for wire in self.circuit.dff_outputs {
@@ -516,6 +562,7 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for LutCircuit<'a> {
         &mut self,
         enc_wire_map: &HashMap<String, CtxtShortInt>,
         cycle: usize,
+        _ptxt_type: &str,
     ) -> HashMap<String, CtxtShortInt> {
         // Make sure the sort circuit function has run.
         assert!(self.circuit.gates.is_empty());
@@ -597,36 +644,37 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for LutCircuit<'a> {
     }
 }
 
-impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
+impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
     fn encrypt_inputs(
         &mut self,
         wire_map_im: &HashMap<String, PtxtType>,
         input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, FheType> {
-        let is_uint16 = false;
+        let mut ptxt_type = "u32";
         let mut enc_wire_map = HashMap::<String, _>::new();
-        for (wire, &ref value) in wire_map_im {
+        for (wire, &value) in wire_map_im {
             if !is_numeric_string(wire) {
                 let encrypted_value = match value {
                     PtxtType::Uint16(pt_val) => {
-                        FheType::Uint16(FheUint16::try_encrypt(*pt_val, &self.client_key).unwrap())
+                        ptxt_type = "u16";
+                        FheType::Uint16(FheUint16::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
                     PtxtType::Uint32(pt_val) => {
-                        FheType::Uint32(FheUint32::try_encrypt(*pt_val, &self.client_key).unwrap())
+                        ptxt_type = "u32";
+                        FheType::Uint32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
-
                 enc_wire_map.insert(wire.to_string(), encrypted_value);
             }
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
             if input_wire_map.is_empty() {
-                let encrypted_value = if is_uint16 {
-                    FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap())
-                } else {
-                    FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap())
+                let encrypted_value = match ptxt_type {
+                    "u16" => FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
+                    "u32" => FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                    _ => unreachable!(),
                 };
 
                 enc_wire_map.insert(input_wire.to_string(), encrypted_value);
@@ -640,19 +688,18 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
                     PtxtType::Uint32(pt_val) => {
                         FheType::Uint32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
 
                 enc_wire_map.insert(input_wire.to_string(), encrypted_value);
             }
         }
         for wire in self.circuit.dff_outputs {
-            let encrypted_value = if is_uint16 {
-                FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap())
-            } else {
-                FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap())
+            let encrypted_value = match ptxt_type {
+                "u16" => FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
+                "u32" => FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                _ => unreachable!(),
             };
-
             enc_wire_map.insert(wire.to_string(), encrypted_value);
         }
 
@@ -663,6 +710,7 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
         &mut self,
         enc_wire_map: &HashMap<String, FheType>,
         cycle: usize,
+        ptxt_type: &str,
     ) -> HashMap<String, FheType> {
         // Make sure the sort circuit function has run.
         assert!(self.circuit.gates.is_empty());
@@ -685,9 +733,6 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
             .iter_mut()
             .sorted_by_key(|(level, _)| *level)
         {
-            // TODO
-            let is_uint16 = false;
-
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
                 let mut is_ptxt_op = false;
@@ -699,20 +744,14 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
                 }
                 let output_value = {
                     if is_ptxt_op {
-                        let mut ptxt_operand = if is_uint16 {
-                            PtxtType::Uint16(0)
-                        } else {
-                            PtxtType::Uint32(0)
-                        };
-                        let mut ctxt_operand: Option<FheType> = None;
+                        let mut ptxt_operand = PtxtType::None;
+                        let mut ctxt_operand = FheType::None;
                         for in_wire in gate.get_input_wires().iter() {
                             if is_numeric_string(in_wire) {
-                                if is_uint16 {
-                                    ptxt_operand =
-                                        in_wire.parse::<PtxtType>().unwrap_or(PtxtType::Uint16(0));
-                                } else {
-                                    ptxt_operand =
-                                        in_wire.parse::<PtxtType>().unwrap_or(PtxtType::Uint32(0));
+                                ptxt_operand = match ptxt_type {
+                                    "u16" => PtxtType::Uint16(in_wire.parse::<u16>().unwrap_or(0)),
+                                    "u32" => PtxtType::Uint32(in_wire.parse::<u32>().unwrap_or(0)),
+                                    _ => unreachable!(),
                                 };
                             } else {
                                 let index = match key_to_index.get(in_wire) {
@@ -722,19 +761,23 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
                                     }
                                 };
                                 // Read the value of the corresponding key
-                                ctxt_operand = Some(eval_values[index].read().unwrap().clone());
+                                ctxt_operand = eval_values[index].read().unwrap().clone();
                             }
                         }
                         let ct_op = match ctxt_operand {
-                            Some(value) => value,
-                            None => panic!("Empty ctxt operand!"),
+                            FheType::Uint16(_) => ctxt_operand,
+                            FheType::Uint32(_) => ctxt_operand,
+                            _ => panic!("Empty ctxt operand!"),
                         };
+
                         if gate.get_gate_type() == GateType::Add {
                             gate.evaluate_encrypted_add_block_plain(&ct_op, ptxt_operand, cycle)
                         } else if gate.get_gate_type() == GateType::Sub {
                             gate.evaluate_encrypted_sub_block_plain(&ct_op, ptxt_operand, cycle)
-                        } else {
+                        } else if gate.get_gate_type() == GateType::Mult {
                             gate.evaluate_encrypted_mul_block_plain(&ct_op, ptxt_operand, cycle)
+                        } else {
+                            unreachable!();
                         }
                     } else {
                         let input_values: Vec<FheType> = gate
@@ -802,26 +845,30 @@ impl<'a> EvalCircuit<PtxtType, FheType> for ArithCircuit<'a> {
                 );
                 break;
             } else {
-                let decrypted =
-                    enc_wire_map[output_wire].decrypt(&self.client_key);
+                let decrypted = enc_wire_map[output_wire].decrypt(&self.client_key);
                 println!(" {}: {}", output_wire, decrypted);
             }
         }
     }
 }
 
-impl<'a> EvalCircuit<bool, CtxtShortInt> for HighPrecisionLutCircuit<'a> {
+impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
     fn encrypt_inputs(
         &mut self,
-        wire_map_im: &HashMap<String, bool>,
-        input_wire_map: &HashMap<String, bool>,
+        wire_map_im: &HashMap<String, PtxtType>,
+        input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, CtxtShortInt> {
         let mut enc_wire_map = HashMap::<String, _>::new();
         for (wire, &value) in wire_map_im {
-            enc_wire_map.insert(
-                wire.to_string(),
-                self.client_key.encrypt_one_block(value as u64),
-            );
+            match value {
+                PtxtType::Bool(v) => {
+                    enc_wire_map.insert(
+                        wire.to_string(),
+                        self.client_key.encrypt_one_block(v as u64),
+                    );
+                }
+                _ => unreachable!(),
+            }
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
@@ -830,11 +877,15 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for HighPrecisionLutCircuit<'a> {
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
             } else {
-                enc_wire_map.insert(
-                    input_wire.to_string(),
-                    self.client_key
-                        .encrypt_one_block(input_wire_map[input_wire] as u64),
-                );
+                match input_wire_map[input_wire] {
+                    PtxtType::Bool(v) => {
+                        enc_wire_map.insert(
+                            input_wire.to_string(),
+                            self.client_key.encrypt_one_block(v as u64),
+                        );
+                    }
+                    _ => unreachable!(),
+                }
             }
         }
         for wire in self.circuit.dff_outputs {
@@ -848,6 +899,7 @@ impl<'a> EvalCircuit<bool, CtxtShortInt> for HighPrecisionLutCircuit<'a> {
         &mut self,
         enc_wire_map: &HashMap<String, CtxtShortInt>,
         cycle: usize,
+        _ptxt_type: &str,
     ) -> HashMap<String, CtxtShortInt> {
         // Make sure the sort circuit function has run.
         assert!(self.circuit.gates.is_empty());
@@ -1021,9 +1073,10 @@ fn test_gate_evaluation() {
                     continue;
                 }
 
-                println!("{}) {} {:?} = {}", cycle, gate.get_gate_name(), inputs_ptxt, output_value_ptxt);
-// TODO: this fails
-                assert_eq!(output_value_ptxt, PtxtType::Bool(client_key.decrypt(&output_value_ctxt)));
+                assert_eq!(
+                    output_value_ptxt,
+                    PtxtType::Bool(client_key.decrypt(&output_value_ctxt))
+                );
 
                 cycle += 1;
             }
@@ -1033,11 +1086,12 @@ fn test_gate_evaluation() {
 
 #[test]
 fn test_evaluate_circuit() {
+    let datatype = "bool";
     let (gates_set, mut wire_map, input_wires, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/2-bit-adder.v",
             false,
-            "bool"
+            datatype,
         );
 
     let empty = vec![];
@@ -1049,7 +1103,7 @@ fn test_evaluate_circuit() {
     for input_wire in &input_wires {
         wire_map.insert(input_wire.to_string(), PtxtType::Bool(true));
     }
-    wire_map = circuit.evaluate(&wire_map, 1);
+    wire_map = circuit.evaluate(&wire_map);
 
     assert_eq!(wire_map.len(), 15);
     assert_eq!(input_wires.len(), 5);
@@ -1063,11 +1117,12 @@ fn test_evaluate_circuit() {
 
 #[test]
 fn test_evaluate_encrypted_circuit() {
+    let datatype = "bool";
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/2-bit-adder.v",
             false,
-            "bool"
+            datatype,
         );
     let mut ptxt_wire_map = wire_map_im.clone();
 
@@ -1083,13 +1138,15 @@ fn test_evaluate_encrypted_circuit() {
     for input_wire in &input_wires {
         ptxt_wire_map.insert(input_wire.to_string(), PtxtType::Bool(true));
     }
-    ptxt_wire_map = circuit.evaluate(&ptxt_wire_map, 1);
+    ptxt_wire_map = circuit.evaluate(&ptxt_wire_map);
 
     let mut enc_wire_map = HashMap::new();
     for (wire, value) in wire_map_im {
         match value {
-            PtxtType::Bool(val) => {enc_wire_map.insert(wire, client_key.encrypt(val));}
-            _ => unreachable!()
+            PtxtType::Bool(val) => {
+                enc_wire_map.insert(wire, client_key.encrypt(val));
+            }
+            _ => unreachable!(),
         }
     }
     for input_wire in &input_wires {
@@ -1097,7 +1154,7 @@ fn test_evaluate_encrypted_circuit() {
     }
     let mut circuit = GateCircuit::new(client_key.clone(), server_key, circuit);
 
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
     let mut dec_wire_map = HashMap::new();
     for wire_name in enc_wire_map.keys().sorted() {
@@ -1113,118 +1170,129 @@ fn test_evaluate_encrypted_circuit() {
     }
 }
 
-// #[test]
-// fn test_evaluate_encrypted_lut_circuit() {
-//     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-//         crate::verilog_parser::read_verilog_file(
-//             "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
-//             false,
-//         );
-//     let input_wire_map =
-//         crate::verilog_parser::read_input_wires("hdl-benchmarks/test-cases/8-bit-adder.inputs.csv");
+#[test]
+fn test_evaluate_encrypted_lut_circuit() {
+    let datatype = "bool";
+    let (gates_set, wire_map_im, input_wires, _, _, _, _) =
+        crate::verilog_parser::read_verilog_file(
+            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
+            false,
+            datatype,
+        );
+    let input_wire_map = crate::verilog_parser::read_input_wires(
+        "hdl-benchmarks/test-cases/8-bit-adder.inputs.csv",
+        datatype,
+    );
 
-//     let empty = vec![];
-//     let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
-//     circuit_ptxt.sort_circuit();
-//     circuit_ptxt.compute_levels();
+    let empty = vec![];
+    let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
+    circuit_ptxt.sort_circuit();
+    circuit_ptxt.compute_levels();
 
-//     let mut ptxt_wire_map = circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map);
+    let mut ptxt_wire_map =
+        circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map, datatype);
 
-//     // Encrypted single bit ctxt
-//     let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_3_CARRY_0);
+    // Encrypted single bit ctxt
+    let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_3_CARRY_0);
 
-//     // Plaintext
-//     for input_wire in &input_wires {
-//         ptxt_wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
-//     }
-//     ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map, 1);
+    // Plaintext
+    for input_wire in &input_wires {
+        ptxt_wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
+    }
+    ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map);
 
-//     let mut circuit = LutCircuit::new(client_key.clone(), server_key, circuit_ptxt);
-//     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-//     enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    let mut circuit = LutCircuit::new(client_key.clone(), server_key, circuit_ptxt);
+    let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
-//     let mut dec_wire_map = HashMap::new();
-//     for wire_name in enc_wire_map.keys().sorted() {
-//         dec_wire_map.insert(
-//             wire_name.to_string(),
-//             client_key.decrypt(&enc_wire_map[wire_name]) == 1,
-//         );
-//     }
+    let mut dec_wire_map = HashMap::new();
+    for wire_name in enc_wire_map.keys().sorted() {
+        dec_wire_map.insert(
+            wire_name.to_string(),
+            client_key.decrypt(&enc_wire_map[wire_name]) == 1,
+        );
+    }
 
-//     // Check that encrypted and plaintext evaluations are equal
-//     for key in ptxt_wire_map.keys() {
-//         assert_eq!(ptxt_wire_map[key], dec_wire_map[key]);
-//     }
-//     debug_println!("wire map: {:?}", dec_wire_map);
-// }
+    // Check that encrypted and plaintext evaluations are equal
+    for key in ptxt_wire_map.keys() {
+        assert_eq!(ptxt_wire_map[key], PtxtType::Bool(dec_wire_map[key]));
+    }
+    debug_println!("wire map: {:?}", dec_wire_map);
+}
 
-// #[test]
-// fn test_evaluate_encrypted_high_precision_lut_circuit() {
-//     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
-//         crate::verilog_parser::read_verilog_file(
-//             "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v",
-//             false,
-//         );
-//     let input_wire_map =
-//         crate::verilog_parser::read_input_wires("hdl-benchmarks/test-cases/8-bit-adder.inputs.csv");
+#[test]
+fn test_evaluate_encrypted_high_precision_lut_circuit() {
+    let datatype = "bool";
+    let (gates_set, wire_map_im, input_wires, _, _, _, _) =
+        crate::verilog_parser::read_verilog_file(
+            "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v",
+            false,
+            datatype,
+        );
+    let input_wire_map = crate::verilog_parser::read_input_wires(
+        "hdl-benchmarks/test-cases/8-bit-adder.inputs.csv",
+        datatype,
+    );
 
-//     let empty = vec![];
-//     let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
-//     circuit_ptxt.sort_circuit();
-//     circuit_ptxt.compute_levels();
-//     let mut ptxt_wire_map = circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map);
+    let empty = vec![];
+    let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
+    circuit_ptxt.sort_circuit();
+    circuit_ptxt.compute_levels();
+    let mut ptxt_wire_map =
+        circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map, datatype);
 
-//     // Encrypted
-//     let (client_key_shortint, server_key_shortint) =
-//         tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
-//     let client_key = ClientKeyInt::from(client_key_shortint.clone());
-//     let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
+    // Encrypted
+    let (client_key_shortint, server_key_shortint) =
+        tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
+    let client_key = ClientKeyInt::from(client_key_shortint.clone());
+    let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
 
-//     let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
-//         &client_key_shortint,
-//         &server_key_shortint,
-//         &WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
-//     );
-//     let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
+    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
+        &client_key_shortint,
+        &server_key_shortint,
+        &WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
+    );
+    let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
 
-//     // Plaintext
-//     for input_wire in &input_wires {
-//         ptxt_wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
-//     }
-//     ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map, 1);
+    // Plaintext
+    for input_wire in &input_wires {
+        ptxt_wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
+    }
+    ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map);
 
-//     let mut circuit = HighPrecisionLutCircuit::new(
-//         wopbs_key_shortint,
-//         wopbs_key,
-//         client_key.clone(),
-//         server_key,
-//         circuit_ptxt,
-//     );
-//     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-//     enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    let mut circuit = HighPrecisionLutCircuit::new(
+        wopbs_key_shortint,
+        wopbs_key,
+        client_key.clone(),
+        server_key,
+        circuit_ptxt,
+    );
+    let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
-//     let mut dec_wire_map = HashMap::new();
-//     for wire_name in enc_wire_map.keys().sorted() {
-//         dec_wire_map.insert(
-//             wire_name.to_string(),
-//             client_key.decrypt_one_block(&enc_wire_map[wire_name]),
-//         );
-//     }
+    let mut dec_wire_map = HashMap::new();
+    for wire_name in enc_wire_map.keys().sorted() {
+        dec_wire_map.insert(
+            wire_name.to_string(),
+            client_key.decrypt_one_block(&enc_wire_map[wire_name]),
+        );
+    }
 
-//     // Check that encrypted and plaintext evaluations are equal
-//     for key in ptxt_wire_map.keys() {
-//         assert_eq!(ptxt_wire_map[key], dec_wire_map[key] != 0);
-//     }
-//     debug_println!("wire map: {:?}", dec_wire_map);
-// }
+    // Check that encrypted and plaintext evaluations are equal
+    for key in ptxt_wire_map.keys() {
+        assert_eq!(ptxt_wire_map[key], PtxtType::Bool(dec_wire_map[key] != 0));
+    }
+    debug_println!("wire map: {:?}", dec_wire_map);
+}
 
 #[test]
 fn test_evaluate_encrypted_arithmetic_circuit() {
+    let datatype = "u32";
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/chi_squared_arith.v",
             true,
-            "u32"
+            datatype,
         );
     let empty = vec![];
     let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
@@ -1242,80 +1310,104 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
 
     // Input set 1
     let input_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv", "u32"
+        "hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv",
+        datatype,
     );
     let output_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_1.outputs.csv", "u32"
+        "hdl-benchmarks/test-cases/chi_squared_arith_1.outputs.csv",
+        datatype,
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(value), PtxtType::Uint16(expected_val)) => assert_eq!(value, expected_val),
-            (PtxtType::Uint32(value), PtxtType::Uint32(expected_val)) => assert_eq!(value, expected_val),
+            (PtxtType::Uint16(value), PtxtType::Uint16(expected_val)) => {
+                assert_eq!(value, expected_val)
+            }
+            (PtxtType::Uint32(value), PtxtType::Uint32(expected_val)) => {
+                assert_eq!(value, expected_val)
+            }
             _ => panic!("Decrypted shouldn't be None"),
         };
     }
 
     // Input set 2
     let input_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_2.inputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_2.inputs.csv",
+        datatype,
     );
     let output_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_2.outputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_2.outputs.csv",
+        datatype,
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => assert_eq!(val, expected_val),
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => assert_eq!(val, expected_val),
+            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
             _ => panic!("Decrypted shouldn't be None"),
         };
     }
 
     // Input set 3
     let input_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_3.inputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_3.inputs.csv",
+        datatype,
     );
     let output_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_3.outputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_3.outputs.csv",
+        datatype,
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => assert_eq!(val, expected_val),
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => assert_eq!(val, expected_val),
+            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
             _ => panic!("Decrypted shouldn't be None"),
         };
     }
 
     // Input set 4
     let input_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_4.inputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_4.inputs.csv",
+        datatype,
     );
     let output_wire_map = crate::verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/chi_squared_arith_4.outputs.csv", "u32",
+        "hdl-benchmarks/test-cases/chi_squared_arith_4.outputs.csv",
+        datatype,
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => assert_eq!(val, expected_val),
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => assert_eq!(val, expected_val),
+            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
             _ => panic!("Decrypted shouldn't be None"),
         };
     }
