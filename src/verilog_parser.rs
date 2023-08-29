@@ -2,6 +2,7 @@ use csv::Reader;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use termion::color;
 
 use crate::gates::{Gate, GateType};
 use crate::PtxtType;
@@ -238,6 +239,21 @@ pub fn read_verilog_file(
                 gates.insert(gate);
             }
         }
+    }
+
+    if has_arith && gates.is_empty() {
+        panic!(
+            "{}[!]{} Parser error, no arithmetic gates detected.",
+            color::Fg(color::LightRed),
+            color::Fg(color::Reset)
+        );
+    } else if gates.is_empty() {
+        panic!(
+            "{}[!]{} Parser error, no gates detected. Make sure to use the \
+                'no-expr' flag in Yosys.",
+            color::Fg(color::LightRed),
+            color::Fg(color::Reset)
+        );
     }
 
     if has_arith && has_luts {

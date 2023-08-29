@@ -102,16 +102,8 @@ fn main() {
         let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, _, _) =
             verilog_parser::read_verilog_file(&file_name, true, arithmetic_type);
         let mut circuit_ptxt =
-            circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
+            circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
 
-        // TODO(@cgouert): move this check in the parser (and the same for gates/luts)
-        if gates_set.is_empty() {
-            panic!(
-                "{}[!]{} Parser error, no arithmetic gates detected.",
-                color::Fg(color::LightRed),
-                color::Fg(color::Reset)
-            );
-        }
         circuit_ptxt.sort_circuit();
         circuit_ptxt.compute_levels();
         #[cfg(debug_assertions)]
@@ -163,18 +155,10 @@ fn main() {
             verilog_parser::read_verilog_file(&file_name, false, arithmetic_type);
         let is_sequential = dff_outputs.len() > 1;
         let mut circuit_ptxt =
-            circuit::Circuit::new(gates_set.clone(), &input_wires, &output_wires, &dff_outputs);
+            circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
         if num_cycles > 1 && !is_sequential {
             panic!(
                 "{}[!]{} Cannot run combinational circuit for more than one cycles.",
-                color::Fg(color::LightRed),
-                color::Fg(color::Reset)
-            );
-        }
-        if gates_set.is_empty() {
-            panic!(
-                "{}[!]{} Parser error, no gates detected. Make sure to use the \
-                    'no-expr' flag in Yosys.",
                 color::Fg(color::LightRed),
                 color::Fg(color::Reset)
             );
