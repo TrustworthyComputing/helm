@@ -49,7 +49,7 @@ pub struct Gate {
     output_wire: String,
     level: usize,
     cycle: usize,
-    output: Option<bool>,
+    output: PtxtType,
     multibit_output: Option<u64>,
     encrypted_gate_output: Option<Ciphertext>,
     encrypted_lut_output: Option<CiphertextBase>,
@@ -114,7 +114,7 @@ impl Gate {
             output_wire,
             level,
             cycle: 0,
-            output: None,
+            output: PtxtType::None,
             multibit_output: None,
             encrypted_gate_output: None,
             encrypted_lut_output: None,
@@ -163,27 +163,29 @@ impl Gate {
         multibit_output
     }
 
-    pub fn evaluate(&mut self, input_values: &Vec<bool>, cycle: usize) -> bool {
-        if let Some(output) = self.output {
-            if self.cycle == cycle {
-                return output;
-            }
-        }
-        let output = match self.gate_type {
-            GateType::And => input_values.iter().all(|&v| v),
-            GateType::Dff => input_values[0],
+    pub fn evaluate(&mut self, input_values: &[PtxtType]) -> PtxtType {
+        self.output = match self.gate_type {
+            GateType::Dff => input_values[0].clone(),
+            GateType::And => PtxtType::Bool(input_values.iter().all(|v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            })),
             GateType::Lut => {
                 let mut shift_amt = 0;
                 let end = input_values.len() - 1;
-                // Convert input bits to int:  [1, 1, 0, 1] => 13.
-                for (input_idx, &input_val) in input_values.iter().enumerate() {
-                    if input_val {
-                        shift_amt += 1 << (end - input_idx);
+
+                for (input_idx, input_val) in input_values.iter().enumerate() {
+                    if let PtxtType::Bool(input_val_b) = input_val {
+                        if *input_val_b {
+                            shift_amt += 1 << (end - input_idx);
+                        }
+                    } else {
+                        panic!("Expected PtxtType::Bool variant");
                     }
                 }
-                // Convert integer LUT entry to bit array (multiple output wires)
-                if !&self.lut_const.as_ref().unwrap().is_empty() {
-                    (self.lut_const.as_ref().unwrap()[shift_amt] & 1) > 0
+
+                if let Some(lut_const) = &self.lut_const {
+                    PtxtType::Bool((lut_const[shift_amt] & 1) > 0)
                 } else {
                     panic!("Lut const not provided");
                 }
@@ -192,23 +194,43 @@ impl Gate {
             GateType::Add => input_values[0],
             GateType::Sub => input_values[0],
             GateType::Mux => {
-                let select = input_values[2];
-                (select && input_values[0]) || (!select && input_values[1])
+                match (&input_values[2], &input_values[0], &input_values[1]) {
+                    (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
+                        PtxtType::Bool((*select && *in_0) || (!select && *in_1))
+                    }
+                    _ => unreachable!(),
+                }
             }
-            GateType::Nand => !input_values.iter().all(|&v| v),
-            GateType::Nor => !input_values.iter().any(|&v| v),
-            GateType::Not => !input_values[0],
-            GateType::Or => input_values.iter().any(|&v| v),
-            GateType::Xnor => input_values.iter().filter(|&&v| v).count() % 2 != 1,
-            GateType::Xor => input_values.iter().filter(|&&v| v).count() % 2 == 1,
+            GateType::Nand => PtxtType::Bool(!input_values.iter().all(|v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            })),
+            GateType::Nor => PtxtType::Bool(!input_values.iter().any(|v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            })),
+            GateType::Not => PtxtType::Bool(match input_values[0] {
+                PtxtType::Bool(b) => !b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            }),
+            GateType::Or => PtxtType::Bool(input_values.iter().any(|v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            })),
+            GateType::Xnor => PtxtType::Bool(input_values.iter().filter(|&v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            }).count() % 2 != 1),
+            GateType::Xor => PtxtType::Bool(input_values.iter().filter(|&v| match v {
+                PtxtType::Bool(b) => *b,
+                _ => panic!("Expected PtxtType::Bool variant"),
+            }).count() % 2 == 1),
             GateType::Buf => input_values[0],
-            GateType::ConstOne => true,
-            GateType::ConstZero => false,
+            GateType::ConstOne => PtxtType::Bool(true),
+            GateType::ConstZero => PtxtType::Bool(false),
         };
 
-        self.output = Some(output);
-        self.cycle = cycle;
-        output
+        self.output.clone()
     }
 
     pub fn evaluate_encrypted(
@@ -219,9 +241,11 @@ impl Gate {
     ) -> Ciphertext {
         if let Some(encrypted_gate_output) = self.encrypted_gate_output.clone() {
             if self.cycle == cycle {
+                println!("Found cycle {}, returning", cycle);
                 return encrypted_gate_output;
             }
         }
+
         let encrypted_gate_output = match self.gate_type {
             GateType::And => server_key.and(&input_values[0], &input_values[1]),
             GateType::Dff => input_values[0].clone(),
@@ -240,8 +264,9 @@ impl Gate {
             GateType::ConstOne => server_key.trivial_encrypt(true),
             GateType::ConstZero => server_key.trivial_encrypt(false),
         };
-
+        self.cycle = cycle;
         self.encrypted_gate_output = Some(encrypted_gate_output.clone());
+
         encrypted_gate_output
     }
 

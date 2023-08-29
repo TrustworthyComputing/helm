@@ -1,11 +1,10 @@
 use csv::Reader;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::str::FromStr;
 
 use crate::gates::{Gate, GateType};
+use crate::PtxtType;
 
 fn extract_const_val(input_str: &str) -> &str {
     let start_index = input_str.find('(').expect("Opening parenthesis not found");
@@ -124,12 +123,13 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
     None
 }
 
-pub fn read_verilog_file<T: Default>(
+pub fn read_verilog_file(
     file_name: &str,
     is_arith: bool,
+    ptxt_type: &str,
 ) -> (
     HashSet<Gate>,
-    HashMap<String, T>,
+    HashMap<String, PtxtType>,
     Vec<String>,
     Vec<String>,
     Vec<String>,
@@ -142,7 +142,7 @@ pub fn read_verilog_file<T: Default>(
     let mut has_luts = false;
     let mut has_arith = false;
     let mut gates = HashSet::new();
-    let mut wire_map: HashMap<String, T> = HashMap::new();
+    let mut wire_map = HashMap::new();
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
     let mut _wires = Vec::new();
@@ -223,7 +223,18 @@ pub fn read_verilog_file<T: Default>(
                     has_arith = true;
                 }
 
-                wire_map.insert(gate.get_output_wire(), T::default());
+                match ptxt_type {
+                    "bool" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::Bool(false));
+                    },
+                    "u16" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::Uint16(0));
+                    },
+                    "u32" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::Uint32(0));
+                    },
+                    _ => unreachable!(),
+                }
                 gates.insert(gate);
             }
         }
@@ -244,26 +255,31 @@ pub fn read_verilog_file<T: Default>(
     )
 }
 
-pub fn read_input_wires<T>(file_name: &str) -> HashMap<String, T>
-where
-    T: FromStr,
-    T::Err: Debug,
-{
+pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, PtxtType> {
     let inputs_file = File::open(file_name).expect("Failed to open CSV file");
     let reader = BufReader::new(inputs_file);
 
     let mut input_map = HashMap::new();
     for rec in Reader::from_reader(reader).records() {
-        let (input_wire, init_value): (String, T) = {
-            let record = rec.unwrap();
-            assert_eq!(record.len(), 2);
-            (
-                record[0].trim().to_string(),
-                record[1].trim().to_string().parse::<T>().unwrap(),
-            )
-        };
+        let record = rec.unwrap();
+        assert_eq!(record.len(), 2);
 
-        input_map.insert(input_wire, init_value);
+        let input_wire = record[0].trim().to_string();
+        match ptxt_type {
+            "bool" => {
+                let init_value = record[1].trim().to_string().parse::<bool>().unwrap();
+                input_map.insert(input_wire, PtxtType::Bool(init_value));
+            },
+            "u16" => {
+                let init_value = record[1].trim().to_string().parse::<u16>().unwrap();
+                input_map.insert(input_wire, PtxtType::Uint16(init_value));
+            },
+            "u32" => {
+                let init_value = record[1].trim().to_string().parse::<u32>().unwrap();
+                input_map.insert(input_wire, PtxtType::Uint32(init_value));
+            },
+            _ => unreachable!(),
+        }
     }
 
     input_map
@@ -272,7 +288,7 @@ where
 #[test]
 fn test_parser() {
     let (gates, wire_map, inputs, _, _, _, _) =
-        read_verilog_file::<bool>("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false, "bool");
 
     assert_eq!(gates.len(), 10);
     assert_eq!(wire_map.len(), 10);
@@ -282,10 +298,10 @@ fn test_parser() {
 #[test]
 fn test_input_wires_parser() {
     let (_, _, inputs, _, _, _, _) =
-        read_verilog_file::<bool>("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false, "bool");
 
     let input_wires_map =
-        read_input_wires::<bool>("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv");
+        read_input_wires("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv", "bool");
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {
@@ -295,13 +311,13 @@ fn test_input_wires_parser() {
 
 #[test]
 fn test_input_wires_arithmetic_parser() {
-    let (_, _, inputs, _, _, _, _) = read_verilog_file::<u32>(
+    let (_, _, inputs, _, _, _, _) = read_verilog_file(
         "hdl-benchmarks/processed-netlists/chi_squared_arith.v",
-        true,
+        true, "u32"
     );
 
     let input_wires_map =
-        read_input_wires::<u32>("hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv");
+        read_input_wires("hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv", "u32");
 
     assert_eq!(input_wires_map.len(), inputs.len());
     for input_wire in inputs {
@@ -314,5 +330,5 @@ fn test_input_wires_arithmetic_parser() {
 #[should_panic(expected = "Can't mix LUTs with arithmetic operators!")]
 fn test_arithmetic_with_luts_parser() {
     let (_, _, _, _, _, _, _) =
-        read_verilog_file::<bool>("hdl-benchmarks/processed-netlists/invalid.v", true);
+        read_verilog_file("hdl-benchmarks/processed-netlists/invalid.v", true, "bool");
 }

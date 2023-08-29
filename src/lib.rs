@@ -17,17 +17,18 @@ pub enum PtxtError {
     InvalidInput,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PtxtType {
-    Uint32(u32),
+    Bool(bool),
     Uint16(u16),
+    Uint32(u32),
     None,
 }
 
 #[derive(Clone)]
 pub enum FheType {
-    Uint32(FheUint32),
     Uint16(FheUint16),
+    Uint32(FheUint32),
     None,
 }
 
@@ -37,10 +38,10 @@ impl FromStr for PtxtType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "None" {
             Ok(PtxtType::None)
-        } else if let Ok(value) = u32::from_str(s) {
-            Ok(PtxtType::Uint32(value))
         } else if let Ok(value) = u16::from_str(s) {
             Ok(PtxtType::Uint16(value))
+        } else if let Ok(value) = u32::from_str(s) {
+            Ok(PtxtType::Uint32(value))
         } else {
             Err(PtxtError::InvalidInput)
         }
@@ -50,8 +51,9 @@ impl FromStr for PtxtType {
 impl fmt::Display for PtxtType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PtxtType::Uint32(value) => write!(f, "Uint32({})", value),
+            PtxtType::Bool(value) => write!(f, "Bool({})", value),
             PtxtType::Uint16(value) => write!(f, "Uint16({})", value),
+            PtxtType::Uint32(value) => write!(f, "Uint32({})", value),
             PtxtType::None => write!(f, "None"),
         }
     }
@@ -60,20 +62,16 @@ impl fmt::Display for PtxtType {
 impl FheType {
     fn decrypt(&self, client_key: &tfhe::ClientKey) -> PtxtType {
         match self {
-            FheType::Uint32(inner_value) => PtxtType::Uint32(inner_value.decrypt(client_key)),
             FheType::Uint16(inner_value) => PtxtType::Uint16(inner_value.decrypt(client_key)),
+            FheType::Uint32(inner_value) => PtxtType::Uint32(inner_value.decrypt(client_key)),
             FheType::None => panic!("Decrypt found a None value"),
         }
     }
 }
 
-pub fn get_input_wire_map<T>(wire_file: Option<String>) -> HashMap<String, T>
-where
-    T: FromStr,
-    T::Err: Debug,
-{
+pub fn get_input_wire_map(wire_file: Option<String>, ptxt_type: &str) -> HashMap<String, PtxtType> {
     if let Some(wire_file_name) = &wire_file {
-        return verilog_parser::read_input_wires::<T>(wire_file_name);
+        return verilog_parser::read_input_wires(wire_file_name, ptxt_type);
     }
 
     println!(
