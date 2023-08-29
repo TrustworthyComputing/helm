@@ -228,11 +228,20 @@ pub fn read_verilog_file(
                     "bool" => {
                         wire_map.insert(gate.get_output_wire(), PtxtType::Bool(false));
                     }
+                    "u8" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::U8(0));
+                    }
                     "u16" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::Uint16(0));
+                        wire_map.insert(gate.get_output_wire(), PtxtType::U16(0));
                     }
                     "u32" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::Uint32(0));
+                        wire_map.insert(gate.get_output_wire(), PtxtType::U32(0));
+                    }
+                    "u64" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::U64(0));
+                    }
+                    "u128" => {
+                        wire_map.insert(gate.get_output_wire(), PtxtType::U128(0));
                     }
                     _ => unreachable!(),
                 }
@@ -286,13 +295,25 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
                 let init_value = record[1].trim().to_string().parse::<bool>().unwrap();
                 input_map.insert(input_wire, PtxtType::Bool(init_value));
             }
+            "u8" => {
+                let init_value = record[1].trim().to_string().parse::<u8>().unwrap();
+                input_map.insert(input_wire, PtxtType::U8(init_value));
+            }
             "u16" => {
                 let init_value = record[1].trim().to_string().parse::<u16>().unwrap();
-                input_map.insert(input_wire, PtxtType::Uint16(init_value));
+                input_map.insert(input_wire, PtxtType::U16(init_value));
             }
             "u32" => {
                 let init_value = record[1].trim().to_string().parse::<u32>().unwrap();
-                input_map.insert(input_wire, PtxtType::Uint32(init_value));
+                input_map.insert(input_wire, PtxtType::U32(init_value));
+            }
+            "u64" => {
+                let init_value = record[1].trim().to_string().parse::<u64>().unwrap();
+                input_map.insert(input_wire, PtxtType::U64(init_value));
+            }
+            "u128" => {
+                let init_value = record[1].trim().to_string().parse::<u128>().unwrap();
+                input_map.insert(input_wire, PtxtType::U128(init_value));
             }
             _ => unreachable!(),
         }

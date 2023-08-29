@@ -19,7 +19,7 @@ use tfhe::{
         ciphertext::Ciphertext as CtxtShortInt, wopbs::WopbsKey as WopbsKeyShortInt,
         ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
     },
-    unset_server_key, FheUint16, FheUint32,
+    unset_server_key, FheUint128, FheUint16, FheUint32, FheUint64, FheUint8,
 };
 
 #[cfg(test)]
@@ -247,11 +247,20 @@ impl<'a> Circuit<'a> {
                     "bool" => {
                         wire_map.insert(input_wire.to_string(), PtxtType::Bool(false));
                     }
+                    "u8" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::U8(0));
+                    }
                     "u16" => {
-                        wire_map.insert(input_wire.to_string(), PtxtType::Uint16(0));
+                        wire_map.insert(input_wire.to_string(), PtxtType::U16(0));
                     }
                     "u32" => {
-                        wire_map.insert(input_wire.to_string(), PtxtType::Uint32(0));
+                        wire_map.insert(input_wire.to_string(), PtxtType::U32(0));
+                    }
+                    "u64" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::U64(0));
+                    }
+                    "u128" => {
+                        wire_map.insert(input_wire.to_string(), PtxtType::U128(0));
                     }
                     _ => unreachable!(),
                 }
@@ -262,10 +271,19 @@ impl<'a> Circuit<'a> {
                     "bool" => {
                         wire_map.insert(input_wire.to_string(), *user_value);
                     }
+                    "u8" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
                     "u16" => {
                         wire_map.insert(input_wire.to_string(), *user_value);
                     }
                     "u32" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
+                    "u64" => {
+                        wire_map.insert(input_wire.to_string(), *user_value);
+                    }
+                    "u128" => {
                         wire_map.insert(input_wire.to_string(), *user_value);
                     }
                     _ => unreachable!(),
@@ -279,11 +297,20 @@ impl<'a> Circuit<'a> {
                 "bool" => {
                     wire_map.insert(wire.to_string(), PtxtType::Bool(false));
                 }
+                "u8" => {
+                    wire_map.insert(wire.to_string(), PtxtType::U8(0));
+                }
                 "u16" => {
-                    wire_map.insert(wire.to_string(), PtxtType::Uint16(0));
+                    wire_map.insert(wire.to_string(), PtxtType::U16(0));
                 }
                 "u32" => {
-                    wire_map.insert(wire.to_string(), PtxtType::Uint32(0));
+                    wire_map.insert(wire.to_string(), PtxtType::U32(0));
+                }
+                "u64" => {
+                    wire_map.insert(wire.to_string(), PtxtType::U64(0));
+                }
+                "u128" => {
+                    wire_map.insert(wire.to_string(), PtxtType::U128(0));
                 }
                 _ => unreachable!(),
             }
@@ -655,13 +682,25 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         for (wire, &value) in wire_map_im {
             if !is_numeric_string(wire) {
                 let encrypted_value = match value {
-                    PtxtType::Uint16(pt_val) => {
-                        ptxt_type = "u16";
-                        FheType::Uint16(FheUint16::try_encrypt(pt_val, &self.client_key).unwrap())
+                    PtxtType::U8(pt_val) => {
+                        ptxt_type = "u8";
+                        FheType::U8(FheUint8::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
-                    PtxtType::Uint32(pt_val) => {
+                    PtxtType::U16(pt_val) => {
+                        ptxt_type = "u16";
+                        FheType::U16(FheUint16::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U32(pt_val) => {
                         ptxt_type = "u32";
-                        FheType::Uint32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
+                        FheType::U32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U64(pt_val) => {
+                        ptxt_type = "u64";
+                        FheType::U64(FheUint64::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U128(pt_val) => {
+                        ptxt_type = "u128";
+                        FheType::U128(FheUint128::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
                     _ => unreachable!(),
                 };
@@ -672,8 +711,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             // if no inputs are provided, initialize it to false
             if input_wire_map.is_empty() {
                 let encrypted_value = match ptxt_type {
-                    "u16" => FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
-                    "u32" => FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                    "u8" => FheType::U8(FheUint8::try_encrypt(0, &self.client_key).unwrap()),
+                    "u16" => FheType::U16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
+                    "u32" => FheType::U32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                    "u64" => FheType::U64(FheUint64::try_encrypt(0, &self.client_key).unwrap()),
+                    "u128" => FheType::U128(FheUint128::try_encrypt(0, &self.client_key).unwrap()),
                     _ => unreachable!(),
                 };
 
@@ -682,11 +724,20 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
             } else {
                 let encrypted_value = match input_wire_map[input_wire] {
-                    PtxtType::Uint16(pt_val) => {
-                        FheType::Uint16(FheUint16::try_encrypt(pt_val, &self.client_key).unwrap())
+                    PtxtType::U8(pt_val) => {
+                        FheType::U8(FheUint8::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
-                    PtxtType::Uint32(pt_val) => {
-                        FheType::Uint32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
+                    PtxtType::U16(pt_val) => {
+                        FheType::U16(FheUint16::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U32(pt_val) => {
+                        FheType::U32(FheUint32::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U64(pt_val) => {
+                        FheType::U64(FheUint64::try_encrypt(pt_val, &self.client_key).unwrap())
+                    }
+                    PtxtType::U128(pt_val) => {
+                        FheType::U128(FheUint128::try_encrypt(pt_val, &self.client_key).unwrap())
                     }
                     _ => unreachable!(),
                 };
@@ -696,8 +747,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         }
         for wire in self.circuit.dff_outputs {
             let encrypted_value = match ptxt_type {
-                "u16" => FheType::Uint16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
-                "u32" => FheType::Uint32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                "u8" => FheType::U8(FheUint8::try_encrypt(0, &self.client_key).unwrap()),
+                "u16" => FheType::U16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
+                "u32" => FheType::U32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
+                "u64" => FheType::U64(FheUint64::try_encrypt(0, &self.client_key).unwrap()),
+                "u128" => FheType::U128(FheUint128::try_encrypt(0, &self.client_key).unwrap()),
                 _ => unreachable!(),
             };
             enc_wire_map.insert(wire.to_string(), encrypted_value);
@@ -749,8 +803,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                         for in_wire in gate.get_input_wires().iter() {
                             if is_numeric_string(in_wire) {
                                 ptxt_operand = match ptxt_type {
-                                    "u16" => PtxtType::Uint16(in_wire.parse::<u16>().unwrap_or(0)),
-                                    "u32" => PtxtType::Uint32(in_wire.parse::<u32>().unwrap_or(0)),
+                                    "u8" => PtxtType::U8(in_wire.parse::<u8>().unwrap_or(0)),
+                                    "u16" => PtxtType::U16(in_wire.parse::<u16>().unwrap_or(0)),
+                                    "u32" => PtxtType::U32(in_wire.parse::<u32>().unwrap_or(0)),
+                                    "u64" => PtxtType::U64(in_wire.parse::<u64>().unwrap_or(0)),
+                                    "u128" => PtxtType::U128(in_wire.parse::<u128>().unwrap_or(0)),
                                     _ => unreachable!(),
                                 };
                             } else {
@@ -765,8 +822,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                             }
                         }
                         let ct_op = match ctxt_operand {
-                            FheType::Uint16(_) => ctxt_operand,
-                            FheType::Uint32(_) => ctxt_operand,
+                            FheType::U8(_) => ctxt_operand,
+                            FheType::U16(_) => ctxt_operand,
+                            FheType::U32(_) => ctxt_operand,
+                            FheType::U64(_) => ctxt_operand,
+                            FheType::U128(_) => ctxt_operand,
                             _ => panic!("Empty ctxt operand!"),
                         };
 
@@ -1287,7 +1347,7 @@ fn test_evaluate_encrypted_high_precision_lut_circuit() {
 
 #[test]
 fn test_evaluate_encrypted_arithmetic_circuit() {
-    let datatype = "u32";
+    let datatype = "u16";
     let (gates_set, wire_map_im, input_wires, _, _, _, _) =
         crate::verilog_parser::read_verilog_file(
             "hdl-benchmarks/processed-netlists/chi_squared_arith.v",
@@ -1324,10 +1384,19 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(value), PtxtType::Uint16(expected_val)) => {
+            (PtxtType::U8(value), PtxtType::U8(expected_val)) => {
                 assert_eq!(value, expected_val)
             }
-            (PtxtType::Uint32(value), PtxtType::Uint32(expected_val)) => {
+            (PtxtType::U16(value), PtxtType::U16(expected_val)) => {
+                assert_eq!(value, expected_val)
+            }
+            (PtxtType::U32(value), PtxtType::U32(expected_val)) => {
+                assert_eq!(value, expected_val)
+            }
+            (PtxtType::U64(value), PtxtType::U64(expected_val)) => {
+                assert_eq!(value, expected_val)
+            }
+            (PtxtType::U128(value), PtxtType::U128(expected_val)) => {
                 assert_eq!(value, expected_val)
             }
             _ => panic!("Decrypted shouldn't be None"),
@@ -1345,15 +1414,24 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 2, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+            (PtxtType::U8(val), PtxtType::U8(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+            (PtxtType::U16(val), PtxtType::U16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U32(val), PtxtType::U32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U64(val), PtxtType::U64(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U128(val), PtxtType::U128(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
             _ => panic!("Decrypted shouldn't be None"),
@@ -1371,15 +1449,24 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 3, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+            (PtxtType::U8(val), PtxtType::U8(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+            (PtxtType::U16(val), PtxtType::U16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U32(val), PtxtType::U32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U64(val), PtxtType::U64(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U128(val), PtxtType::U128(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
             _ => panic!("Decrypted shouldn't be None"),
@@ -1397,15 +1484,24 @@ fn test_evaluate_encrypted_arithmetic_circuit() {
     );
 
     let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
+    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 4, datatype);
 
     // Check that the evaluation was correct
     for (wire_name, value) in output_wire_map {
         match (enc_wire_map[&wire_name].decrypt(&client_key), value) {
-            (PtxtType::Uint16(val), PtxtType::Uint16(expected_val)) => {
+            (PtxtType::U8(val), PtxtType::U8(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
-            (PtxtType::Uint32(val), PtxtType::Uint32(expected_val)) => {
+            (PtxtType::U16(val), PtxtType::U16(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U32(val), PtxtType::U32(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U64(val), PtxtType::U64(expected_val)) => {
+                assert_eq!(val, expected_val)
+            }
+            (PtxtType::U128(val), PtxtType::U128(expected_val)) => {
                 assert_eq!(val, expected_val)
             }
             _ => panic!("Decrypted shouldn't be None"),

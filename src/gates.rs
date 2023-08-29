@@ -314,11 +314,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, ct2) {
-            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
-                FheType::Uint32(ct1_value * ct2_value)
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => FheType::U8(ct1_value * ct2_value),
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                FheType::U16(ct1_value * ct2_value)
             }
-            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
-                FheType::Uint16(ct1_value * ct2_value)
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                FheType::U32(ct1_value * ct2_value)
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                FheType::U64(ct1_value * ct2_value)
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                FheType::U128(ct1_value * ct2_value)
             }
             _ => panic!("evaluate_encrypted_mul_block"),
         };
@@ -341,11 +348,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, pt1) {
-            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
-                FheType::Uint32(ct1_value * pt1_value)
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => FheType::U8(ct1_value * pt1_value),
+            (FheType::U16(ct1_value), PtxtType::U16(pt1_value)) => {
+                FheType::U16(ct1_value * pt1_value)
             }
-            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
-                FheType::Uint16(ct1_value * pt1_value)
+            (FheType::U32(ct1_value), PtxtType::U32(pt1_value)) => {
+                FheType::U32(ct1_value * pt1_value)
+            }
+            (FheType::U64(ct1_value), PtxtType::U64(pt1_value)) => {
+                FheType::U64(ct1_value * pt1_value)
+            }
+            (FheType::U128(ct1_value), PtxtType::U128(pt1_value)) => {
+                FheType::U128(ct1_value * pt1_value)
             }
             _ => panic!("evaluate_encrypted_mul_block_plain"),
         };
@@ -368,11 +382,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, ct2) {
-            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
-                FheType::Uint32(ct1_value + ct2_value)
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => FheType::U8(ct1_value + ct2_value),
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                FheType::U16(ct1_value + ct2_value)
             }
-            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
-                FheType::Uint16(ct1_value + ct2_value)
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                FheType::U32(ct1_value + ct2_value)
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                FheType::U64(ct1_value + ct2_value)
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                FheType::U128(ct1_value + ct2_value)
             }
             _ => panic!("evaluate_encrypted_add_block"),
         };
@@ -395,11 +416,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, pt1) {
-            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
-                FheType::Uint32(ct1_value + pt1_value)
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => FheType::U8(ct1_value + pt1_value),
+            (FheType::U16(ct1_value), PtxtType::U16(pt1_value)) => {
+                FheType::U16(ct1_value + pt1_value)
             }
-            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
-                FheType::Uint16(ct1_value + pt1_value)
+            (FheType::U32(ct1_value), PtxtType::U32(pt1_value)) => {
+                FheType::U32(ct1_value + pt1_value)
+            }
+            (FheType::U64(ct1_value), PtxtType::U64(pt1_value)) => {
+                FheType::U64(ct1_value + pt1_value)
+            }
+            (FheType::U128(ct1_value), PtxtType::U128(pt1_value)) => {
+                FheType::U128(ct1_value + pt1_value)
             }
             _ => panic!("evaluate_encrypted_add_block_plain"),
         };
@@ -422,11 +450,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, ct2) {
-            (FheType::Uint32(ct1_value), FheType::Uint32(ct2_value)) => {
-                FheType::Uint32(ct1_value - ct2_value)
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => FheType::U8(ct1_value - ct2_value),
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                FheType::U16(ct1_value - ct2_value)
             }
-            (FheType::Uint16(ct1_value), FheType::Uint16(ct2_value)) => {
-                FheType::Uint16(ct1_value - ct2_value)
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                FheType::U32(ct1_value - ct2_value)
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                FheType::U64(ct1_value - ct2_value)
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                FheType::U128(ct1_value - ct2_value)
             }
             _ => panic!("evaluate_encrypted_sub_block"),
         };
@@ -449,11 +484,18 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, pt1) {
-            (FheType::Uint32(ct1_value), PtxtType::Uint32(pt1_value)) => {
-                FheType::Uint32(ct1_value - pt1_value)
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => FheType::U8(ct1_value - pt1_value),
+            (FheType::U16(ct1_value), PtxtType::U16(pt1_value)) => {
+                FheType::U16(ct1_value - pt1_value)
             }
-            (FheType::Uint16(ct1_value), PtxtType::Uint16(pt1_value)) => {
-                FheType::Uint16(ct1_value - pt1_value)
+            (FheType::U32(ct1_value), PtxtType::U32(pt1_value)) => {
+                FheType::U32(ct1_value - pt1_value)
+            }
+            (FheType::U64(ct1_value), PtxtType::U64(pt1_value)) => {
+                FheType::U64(ct1_value - pt1_value)
+            }
+            (FheType::U128(ct1_value), PtxtType::U128(pt1_value)) => {
+                FheType::U128(ct1_value - pt1_value)
             }
             _ => panic!("evaluate_encrypted_sub_block_plain"),
         };
@@ -610,8 +652,8 @@ where
 fn test_caching_of_gate_evaluation() {
     use std::time::Instant;
     use tfhe::prelude::*;
-    use tfhe::FheUint16;
     use tfhe::set_server_key;
+    use tfhe::FheUint16;
     use tfhe::{generate_keys, ConfigBuilder};
 
     let config = ConfigBuilder::all_disabled()
@@ -625,10 +667,10 @@ fn test_caching_of_gate_evaluation() {
 
     let ptxt = vec![10, 20, 30, 40];
     let inputs_ctxt = vec![
-        FheType::Uint16(FheUint16::try_encrypt(ptxt[0], &client_key).unwrap()),
-        FheType::Uint16(FheUint16::try_encrypt(ptxt[1], &client_key).unwrap()),
-        FheType::Uint16(FheUint16::try_encrypt(ptxt[2], &client_key).unwrap()),
-        FheType::Uint16(FheUint16::try_encrypt(ptxt[3], &client_key).unwrap()),
+        FheType::U16(FheUint16::try_encrypt(ptxt[0], &client_key).unwrap()),
+        FheType::U16(FheUint16::try_encrypt(ptxt[1], &client_key).unwrap()),
+        FheType::U16(FheUint16::try_encrypt(ptxt[2], &client_key).unwrap()),
+        FheType::U16(FheUint16::try_encrypt(ptxt[3], &client_key).unwrap()),
     ];
 
     let mut gates = vec![
@@ -665,15 +707,15 @@ fn test_caching_of_gate_evaluation() {
         let (result, ptxt_result) = match gate.get_gate_type() {
             GateType::Add => (
                 gate.evaluate_encrypted_add_block(&inputs_ctxt[0], &inputs_ctxt[1], cycle),
-                PtxtType::Uint16(ptxt[0] + ptxt[1]),
+                PtxtType::U16(ptxt[0] + ptxt[1]),
             ),
             GateType::Sub => (
                 gate.evaluate_encrypted_sub_block(&inputs_ctxt[1], &inputs_ctxt[0], cycle),
-                PtxtType::Uint16(ptxt[1] - ptxt[0]),
+                PtxtType::U16(ptxt[1] - ptxt[0]),
             ),
             GateType::Mult => (
                 gate.evaluate_encrypted_mul_block(&inputs_ctxt[0], &inputs_ctxt[1], cycle),
-                PtxtType::Uint16(ptxt[0] * ptxt[1]),
+                PtxtType::U16(ptxt[0] * ptxt[1]),
             ),
             _ => unreachable!(),
         };
@@ -727,15 +769,15 @@ fn test_caching_of_gate_evaluation() {
         let (result, ptxt_result) = match gate.get_gate_type() {
             GateType::Add => (
                 gate.evaluate_encrypted_add_block(&inputs_ctxt[1], &inputs_ctxt[2], cycle),
-                PtxtType::Uint16(ptxt[1] + ptxt[2]),
+                PtxtType::U16(ptxt[1] + ptxt[2]),
             ),
             GateType::Sub => (
                 gate.evaluate_encrypted_sub_block(&inputs_ctxt[2], &inputs_ctxt[1], cycle),
-                PtxtType::Uint16(ptxt[2] - ptxt[1]),
+                PtxtType::U16(ptxt[2] - ptxt[1]),
             ),
             GateType::Mult => (
                 gate.evaluate_encrypted_mul_block(&inputs_ctxt[1], &inputs_ctxt[2], cycle),
-                PtxtType::Uint16(ptxt[1] * ptxt[2]),
+                PtxtType::U16(ptxt[1] * ptxt[2]),
             ),
             _ => unreachable!(),
         };
@@ -770,15 +812,15 @@ fn test_caching_of_gate_evaluation() {
         let (result, ptxt_result) = match gate.get_gate_type() {
             GateType::Add => (
                 gate.evaluate_encrypted_add_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle),
-                PtxtType::Uint16(ptxt[2] + ptxt[3]),
+                PtxtType::U16(ptxt[2] + ptxt[3]),
             ),
             GateType::Sub => (
                 gate.evaluate_encrypted_sub_block(&inputs_ctxt[3], &inputs_ctxt[2], cycle),
-                PtxtType::Uint16(ptxt[3] - ptxt[2]),
+                PtxtType::U16(ptxt[3] - ptxt[2]),
             ),
             GateType::Mult => (
                 gate.evaluate_encrypted_mul_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle),
-                PtxtType::Uint16(ptxt[2] * ptxt[3]),
+                PtxtType::U16(ptxt[2] * ptxt[3]),
             ),
             _ => unreachable!(),
         };

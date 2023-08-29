@@ -91,10 +91,8 @@ fn main() {
             color::Fg(color::Reset)
         );
         let arithmetic_type = arithmetic_type.as_str();
-
         match arithmetic_type {
-            "u16" => {}
-            "u32" => {}
+            "u8" | "u16" | "u32" | "u64" | "u128" => {}
             _ => unreachable!(),
         }
 
