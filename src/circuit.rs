@@ -50,7 +50,11 @@ pub trait EvalCircuit<C> {
         ptxt_type: &str,
     ) -> HashMap<String, C>;
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, C>, verbose: bool);
+    fn decrypt_outputs(
+        &self,
+        enc_wire_map: &HashMap<String, C>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType>;
 }
 
 pub struct Circuit<'a> {
@@ -527,8 +531,19 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
             .collect()
     }
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, CtxtBool>, verbose: bool) {
-        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+    fn decrypt_outputs(
+        &self,
+        enc_wire_map: &HashMap<String, CtxtBool>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+
+        for output_wire in self.circuit.output_wires {
+            let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
+            decrypted_outputs.insert(output_wire.clone(), PtxtType::Bool(decrypted_value));
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -537,13 +552,11 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
                 );
                 break;
             } else {
-                println!(
-                    " {}: {}",
-                    output_wire,
-                    self.client_key.decrypt(&enc_wire_map[output_wire])
-                );
+                println!(" {}: {}", wire, val);
             }
         }
+
+        decrypted_outputs
     }
 }
 
@@ -651,8 +664,19 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
             .collect()
     }
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, CtxtShortInt>, verbose: bool) {
-        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+    fn decrypt_outputs(
+        &self,
+        enc_wire_map: &HashMap<String, CtxtShortInt>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+
+        for output_wire in self.circuit.output_wires {
+            let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
+            decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted_value));
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -661,13 +685,11 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
                 );
                 break;
             } else {
-                println!(
-                    " {}: {}",
-                    output_wire,
-                    self.client_key.decrypt(&enc_wire_map[output_wire])
-                );
+                println!(" {}: {}", wire, val);
             }
         }
+
+        decrypted_outputs
     }
 }
 
@@ -895,8 +917,19 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             .collect()
     }
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, FheType>, verbose: bool) {
-        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+    fn decrypt_outputs(
+        &self,
+        enc_wire_map: &HashMap<String, FheType>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+
+        for output_wire in self.circuit.output_wires {
+            let decrypted = enc_wire_map[output_wire].decrypt(&self.client_key);
+            decrypted_outputs.insert(output_wire.clone(), decrypted);
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -905,10 +938,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                 );
                 break;
             } else {
-                let decrypted = enc_wire_map[output_wire].decrypt(&self.client_key);
-                println!(" {}: {}", output_wire, decrypted);
+                println!(" {}: {}", wire, val);
             }
         }
+
+        decrypted_outputs
     }
 }
 
@@ -1021,8 +1055,21 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
             .collect()
     }
 
-    fn decrypt_outputs(&self, enc_wire_map: &HashMap<String, CtxtShortInt>, verbose: bool) {
-        for (i, output_wire) in self.circuit.output_wires.iter().enumerate() {
+    fn decrypt_outputs(
+        &self,
+        enc_wire_map: &HashMap<String, CtxtShortInt>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+
+        for output_wire in self.circuit.output_wires {
+            let decrypted = self
+                .client_key
+                .decrypt_one_block(&enc_wire_map[output_wire]);
+            decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted));
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -1031,14 +1078,11 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
                 );
                 break;
             } else {
-                println!(
-                    " {}: {}",
-                    output_wire,
-                    self.client_key
-                        .decrypt_one_block(&enc_wire_map[output_wire])
-                );
+                println!(" {}: {}", wire, val);
             }
         }
+
+        decrypted_outputs
     }
 }
 

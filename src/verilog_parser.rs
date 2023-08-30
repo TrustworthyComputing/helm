@@ -1,7 +1,7 @@
 use csv::Reader;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use termion::color;
 
 use crate::gates::{Gate, GateType};
@@ -320,6 +320,38 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
     }
 
     input_map
+}
+
+pub fn write_output_wires(file_name: Option<String>, input_map: &HashMap<String, PtxtType>) {
+    if let Some(file_name) = file_name {
+        let file = File::create(&file_name).expect("Failed to create CSV file");
+        let mut writer = BufWriter::new(file);
+
+        for (input_wire, ptxt_type) in input_map.iter() {
+            match ptxt_type {
+                PtxtType::Bool(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::U8(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::U16(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::U32(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::U64(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::U128(value) => {
+                    writeln!(writer, "{}, {}", input_wire, value).expect("Failed to write record");
+                }
+                PtxtType::None => unreachable!(),
+            }
+        }
+        println!("Decrypted outputs written to {}", file_name);
+    }
 }
 
 #[test]
