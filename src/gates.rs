@@ -38,6 +38,7 @@ pub enum GateType {
     Mult,      // mult ID(in0, in1, out);
     Add,       // add  ID(in0, in1, out);
     Sub,       // sub  ID(in0, in1, out);
+    Div,       // div  ID(in0, in1, out);
 }
 
 #[derive(Clone)]
@@ -142,27 +143,6 @@ impl Gate {
         self.level = level;
     }
 
-    pub fn evaluate_multibit(&mut self, input_values: &[u64], cycle: usize) -> u64 {
-        if let Some(multibit_output) = self.multibit_output {
-            if self.cycle == cycle {
-                return multibit_output;
-            }
-        }
-        let multibit_output = {
-            if self.gate_type == GateType::Mult {
-                input_values.iter().product()
-            } else if self.gate_type == GateType::Add {
-                input_values.iter().sum()
-            } else if self.gate_type == GateType::Sub {
-                input_values[1] - input_values[0]
-            } else {
-                0
-            }
-        };
-        self.cycle = cycle;
-        multibit_output
-    }
-
     pub fn evaluate(&mut self, input_values: &[PtxtType]) -> PtxtType {
         self.output = match self.gate_type {
             GateType::Dff => input_values[0],
@@ -190,9 +170,10 @@ impl Gate {
                     panic!("Lut const not provided");
                 }
             }
-            GateType::Mult => input_values[0],
-            GateType::Add => input_values[0],
-            GateType::Sub => input_values[0],
+            GateType::Mult => unreachable!(),
+            GateType::Div => unreachable!(),
+            GateType::Add => unreachable!(),
+            GateType::Sub => unreachable!(),
             GateType::Mux => match (&input_values[2], &input_values[0], &input_values[1]) {
                 (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
                     PtxtType::Bool((*select && *in_0) || (!select && *in_1))
@@ -264,6 +245,7 @@ impl Gate {
             GateType::Lut => panic!("Can't mix LUTs with Boolean gates!"),
             GateType::Add => panic!("Add gates can't be mixed with Boolean ops!"),
             GateType::Mult => panic!("Mult gates can't be mixed with Boolean ops!"),
+            GateType::Div => panic!("Div gates can't be mixed with Boolean ops!"),
             GateType::Sub => panic!("Sub gates can't be mixed with Boolean ops!"),
             GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
             GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
@@ -362,6 +344,74 @@ impl Gate {
                 FheType::U128(ct1_value * pt1_value)
             }
             _ => panic!("evaluate_encrypted_mul_block_plain"),
+        };
+
+        self.cycle = cycle;
+        self.encrypted_multibit_output.clone()
+    }
+
+    pub fn evaluate_encrypted_div_block(
+        &mut self,
+        ct1: &FheType,
+        ct2: &FheType,
+        cycle: usize,
+    ) -> FheType {
+        if self.cycle == cycle {
+            match self.encrypted_multibit_output {
+                FheType::None => (),
+                _ => return self.encrypted_multibit_output.clone(),
+            }
+        }
+
+        self.encrypted_multibit_output = match (ct1, ct2) {
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => FheType::U8(ct1_value / ct2_value),
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                FheType::U16(ct1_value / ct2_value)
+            }
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                FheType::U32(ct1_value / ct2_value)
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                FheType::U64(ct1_value / ct2_value)
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                FheType::U128(ct1_value / ct2_value)
+            }
+            _ => panic!("evaluate_encrypted_div_block"),
+        };
+
+        self.cycle = cycle;
+        self.encrypted_multibit_output.clone()
+    }
+
+    pub fn evaluate_encrypted_div_block_plain(
+        &mut self,
+        ct1: &FheType,
+        pt1: PtxtType,
+        cycle: usize,
+    ) -> FheType {
+        if self.cycle == cycle {
+            match self.encrypted_multibit_output {
+                FheType::None => (),
+                _ => return self.encrypted_multibit_output.clone(),
+            }
+        }
+
+        self.encrypted_multibit_output = match (ct1, pt1) {
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => FheType::U8(ct1_value / pt1_value),
+            (FheType::U16(ct1_value), PtxtType::U16(pt1_value)) => {
+                FheType::U16(ct1_value / pt1_value)
+            }
+            (FheType::U32(ct1_value), PtxtType::U32(pt1_value)) => {
+                FheType::U32(ct1_value / pt1_value)
+            }
+            (FheType::U64(ct1_value), PtxtType::U64(pt1_value)) => {
+                FheType::U64(ct1_value / pt1_value)
+            }
+            (FheType::U128(ct1_value), PtxtType::U128(pt1_value)) => {
+                FheType::U128(ct1_value / pt1_value)
+            }
+            _ => panic!("evaluate_encrypted_div_block_plain"),
         };
 
         self.cycle = cycle;

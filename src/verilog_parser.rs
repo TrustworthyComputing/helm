@@ -45,6 +45,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "cone" => GateType::ConstOne,
         "add" => GateType::Add,
         "mult" => GateType::Mult,
+        "div" => GateType::Div,
         "sub" => GateType::Sub,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
@@ -218,8 +219,9 @@ pub fn read_verilog_file(
                 } else if gate.get_gate_type() == GateType::Lut {
                     has_luts = true;
                 } else if gate.get_gate_type() == GateType::Add
-                    || gate.get_gate_type() == GateType::Mult
                     || gate.get_gate_type() == GateType::Sub
+                    || gate.get_gate_type() == GateType::Mult
+                    || gate.get_gate_type() == GateType::Div
                 {
                     has_arith = true;
                 }
