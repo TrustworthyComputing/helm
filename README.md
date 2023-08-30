@@ -64,7 +64,9 @@ cargo run --bin preprocessor --release  \
     --manifest-path=./hdl-benchmarks/Cargo.toml --  \
     --input ./hdl-benchmarks/designs/chi_squared.v \
     --output ./hdl-benchmarks/processed-netlists/chi_squared_arith.v
-cargo run --bin helm --release -- --arithmetic u32 --input ./hdl-benchmarks/processed-netlists/chi_squared_arith.v --wires ./hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv
+cargo run --bin helm --release -- --arithmetic u32 \
+    --input ./hdl-benchmarks/processed-netlists/chi_squared_arith.v \
+    --wires ./hdl-benchmarks/test-cases/chi_squared_arith_1.inputs.csv
 ```
 
 <p align="center">

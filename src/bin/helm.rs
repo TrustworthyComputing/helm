@@ -9,7 +9,14 @@ use termion::color;
 use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_4_CARRY_0};
 use tfhe::{generate_keys, ConfigBuilder};
 
-fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
+fn parse_args() -> (
+    String,
+    usize,
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let matches = Command::new("HELM")
         .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
         .arg(
@@ -27,6 +34,14 @@ fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
                 .required(false),
         )
         .arg(
+            Arg::new("output-wires")
+                .long("output-wires")
+                .value_name("FILE")
+                .help("Path to a file to write the output wires")
+                .required(false)
+                .value_parser(clap::value_parser!(String)),
+        )
+        .arg(
             Arg::new("cycles")
                 .long("cycles")
                 .value_name("NUMBER")
@@ -40,6 +55,7 @@ fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
                 .short('v')
                 .long("verbose")
                 .help("Turn verbose printing on")
+                .required(false)
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -62,7 +78,8 @@ fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
         .expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
     let verbose = matches.get_flag("verbose");
-    let wires_file = matches.get_one::<String>("wires").cloned();
+    let input_wires = matches.get_one::<String>("wires").cloned();
+    let output_wires = matches.get_one::<String>("output-wires").cloned();
     let arithmetic = matches.get_one::<String>("arithmetic").cloned();
 
     // TODO: Add support for this.
@@ -76,13 +93,15 @@ fn parse_args() -> (String, usize, bool, Option<String>, Option<String>) {
         num_cycles,
         verbose,
         arithmetic,
-        wires_file,
+        input_wires,
+        output_wires,
     )
 }
 
 fn main() {
     ascii::print_art();
-    let (file_name, num_cycles, verbose, arithmetic, wire_file) = parse_args();
+    let (file_name, num_cycles, verbose, arithmetic, inputs_filename, outputs_filename) =
+        parse_args();
     if let Some(arithmetic_type) = arithmetic {
         println!(
             "{} -- Arithmetic mode with {} -- {}",
@@ -96,7 +115,7 @@ fn main() {
             _ => unreachable!(),
         }
 
-        let input_wire_map = get_input_wire_map(wire_file, arithmetic_type);
+        let input_wire_map = get_input_wire_map(inputs_filename, arithmetic_type);
         let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, _, _) =
             verilog_parser::read_verilog_file(&file_name, true, arithmetic_type);
         let mut circuit_ptxt =
@@ -141,14 +160,15 @@ fn main() {
         // Client decrypts the output of the circuit
         start = Instant::now();
         println!("Encrypted Evaluation:");
-        EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+        let decrypted_outputs = EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+        verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
         println!(
             "Decryption done in {} seconds.",
             start.elapsed().as_secs_f64()
         );
     } else {
         let arithmetic_type = "bool";
-        let input_wire_map = get_input_wire_map(wire_file, arithmetic_type);
+        let input_wire_map = get_input_wire_map(inputs_filename, arithmetic_type);
         let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, has_luts, _) =
             verilog_parser::read_verilog_file(&file_name, false, arithmetic_type);
         let is_sequential = dff_outputs.len() > 1;
@@ -226,7 +246,8 @@ fn main() {
             // Client decrypts the output of the circuit
             start = Instant::now();
             println!("Encrypted Evaluation:");
-            EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+            let decrypted_outputs = EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+            verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
             println!(
                 "Decryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
@@ -271,7 +292,8 @@ fn main() {
             // Client decrypts the output of the circuit
             start = Instant::now();
             println!("Encrypted Evaluation:");
-            EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+            let decrypted_outputs = EvalCircuit::decrypt_outputs(&circuit, &enc_wire_map, verbose);
+            verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
             println!(
                 "Decryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
