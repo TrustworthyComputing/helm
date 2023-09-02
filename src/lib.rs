@@ -3,6 +3,7 @@ pub mod circuit;
 pub mod gates;
 pub mod verilog_parser;
 
+use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::fmt;
 use std::{collections::HashMap, fmt::Debug, str::FromStr};
 use termion::color;
@@ -86,16 +87,137 @@ impl FheType {
     }
 }
 
-pub fn get_input_wire_map(wire_file: Option<String>, ptxt_type: &str) -> HashMap<String, PtxtType> {
-    if let Some(wire_file_name) = &wire_file {
-        return verilog_parser::read_input_wires(wire_file_name, ptxt_type);
+// arithmetic -i a 15
+// boolean: 1) -i a[0] 1 -i a[1] 0 ...
+// boolean: 1) -i aeskey 0 ...
+
+pub fn get_input_wire_map(
+    inputs_filename: Option<String>,
+    wire_inputs: Vec<Vec<&String>>,
+    arithmetic_type: &str,
+) -> HashMap<String, PtxtType> {
+    if let Some(wire_file_name) = &inputs_filename {
+        println!(
+            "{}[✓]{} Input wires were provided.",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset)
+        );
+
+        verilog_parser::read_input_wires(wire_file_name, arithmetic_type)
+    } else if !wire_inputs.is_empty() {
+        println!(
+            "{}[✓]{} Input wires were provided.",
+            color::Fg(color::LightGreen),
+            color::Fg(color::Reset)
+        );
+
+        // [[wire1, value1], [wire2, value2], [wire3, value3]]
+
+        wire_inputs
+            .iter()
+            .map(|parts| {
+                let ptxt = match arithmetic_type {
+                    "bool" => PtxtType::Bool(match parts[1].as_str() {
+                        "1" => true,
+                        s => s.parse::<bool>().unwrap_or(false),
+                    }),
+                    "u8" => PtxtType::U8(parts[1].parse().unwrap()),
+                    "u16" => PtxtType::U16(parts[1].parse().unwrap()),
+                    "u32" => PtxtType::U32(parts[1].parse().unwrap()),
+                    "u64" => PtxtType::U64(parts[1].parse().unwrap()),
+                    "u128" => PtxtType::U128(parts[1].parse().unwrap()),
+                    _ => unreachable!(),
+                };
+                println!("parts {:?} -> {:?}", parts, ptxt);
+
+                (parts[0].to_string(), ptxt) // (wirename, value)
+            })
+            .collect::<HashMap<_, _>>()
+    } else {
+        println!(
+            "{}[!]{} No input wires specified, they will be initialized to false.",
+            color::Fg(color::LightYellow),
+            color::Fg(color::Reset)
+        );
+
+        HashMap::new()
     }
+}
 
-    println!(
-        "{}[!]{} No CSV file provided for the input wires, they will be initialized to false.",
-        color::Fg(color::LightYellow),
-        color::Fg(color::Reset)
-    );
-
-    HashMap::new()
+pub fn parse_args() -> ArgMatches {
+    Command::new("HELM")
+        .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
+        .arg(
+            Arg::new("verilog")
+                .long("verilog")
+                .short('v')
+                .value_name("FILE")
+                .help("Verilog input file to evaluate")
+                .required(true),
+        )
+        .arg(
+            Arg::new("input-wires")
+                .long("input-wires")
+                .short('w')
+                .num_args(2)
+                .action(ArgAction::Append)
+                .value_parser(value_parser!(String))
+                .value_names(["STRING", "HEX"])
+                .help("Input wire values (-i wire1 hex1 -i wire2 hex2 ...)")
+                .value_delimiter(',')
+                .conflicts_with("input-wires-file")
+                .required(false),
+        )
+        .arg(
+            Arg::new("input-wires-file")
+                .long("input-wires-file")
+                .short('i')
+                .value_name("FILE")
+                .help("CSV file that contains the input wire values (wire, value)")
+                .conflicts_with("input-wires")
+                .required(false),
+        )
+        .arg(
+            Arg::new("output-wires-file")
+                .long("output-wires-file")
+                .short('o')
+                .value_name("FILE")
+                .help("CSV file to write the output wires (wire, value)")
+                .required(false)
+                .value_parser(clap::value_parser!(String)),
+        )
+        .arg(
+            Arg::new("arithmetic")
+                .long("arithmetic")
+                .short('a')
+                .value_name("TYPE")
+                .help("Precision for arithmetic mode")
+                .value_parser([
+                    PossibleValue::new("u8"),
+                    PossibleValue::new("u16"),
+                    PossibleValue::new("u32"),
+                    PossibleValue::new("u64"),
+                    PossibleValue::new("u128"),
+                ])
+                .required(false),
+        )
+        .arg(
+            Arg::new("cycles")
+                .long("cycles")
+                .short('c')
+                .value_name("NUMBER")
+                .help("Number of cycles for sequential circuits")
+                .required(false)
+                .default_value("1")
+                .value_parser(clap::value_parser!(usize)),
+        )
+        .arg(
+            Arg::new("verbose")
+                .long("verbose")
+                .short('p')
+                .help("Turn verbose printing on")
+                .required(false)
+                .action(ArgAction::SetTrue),
+        )
+        .get_matches()
 }

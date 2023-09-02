@@ -128,10 +128,9 @@ fn parse_range(range_str: &str) -> Option<(usize, usize)> {
 pub fn read_verilog_file(
     file_name: &str,
     is_arith: bool,
-    ptxt_type: &str,
 ) -> (
     HashSet<Gate>,
-    HashMap<String, PtxtType>,
+    HashSet<String>,
     Vec<String>,
     Vec<String>,
     Vec<String>,
@@ -144,7 +143,7 @@ pub fn read_verilog_file(
     let mut has_luts = false;
     let mut has_arith = false;
     let mut gates = HashSet::new();
-    let mut wire_map = HashMap::new();
+    let mut wire_set = HashSet::new();
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
     let mut _wires = Vec::new();
@@ -226,27 +225,8 @@ pub fn read_verilog_file(
                     has_arith = true;
                 }
 
-                match ptxt_type {
-                    "bool" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::Bool(false));
-                    }
-                    "u8" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::U8(0));
-                    }
-                    "u16" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::U16(0));
-                    }
-                    "u32" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::U32(0));
-                    }
-                    "u64" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::U64(0));
-                    }
-                    "u128" => {
-                        wire_map.insert(gate.get_output_wire(), PtxtType::U128(0));
-                    }
-                    _ => unreachable!(),
-                }
+                wire_set.insert(gate.get_output_wire());
+
                 gates.insert(gate);
             }
         }
@@ -273,7 +253,7 @@ pub fn read_verilog_file(
 
     (
         gates,
-        wire_map,
+        wire_set,
         inputs,
         outputs,
         dff_outputs,
@@ -358,24 +338,18 @@ pub fn write_output_wires(file_name: Option<String>, input_map: &HashMap<String,
 
 #[test]
 fn test_parser() {
-    let (gates, wire_map, inputs, _, _, _, _) = read_verilog_file(
-        "hdl-benchmarks/processed-netlists/2-bit-adder.v",
-        false,
-        "bool",
-    );
+    let (gates, wire_set, inputs, _, _, _, _) =
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
 
     assert_eq!(gates.len(), 10);
-    assert_eq!(wire_map.len(), 10);
+    assert_eq!(wire_set.len(), 10);
     assert_eq!(inputs.len(), 5);
 }
 
 #[test]
 fn test_input_wires_parser() {
-    let (_, _, inputs, _, _, _, _) = read_verilog_file(
-        "hdl-benchmarks/processed-netlists/2-bit-adder.v",
-        false,
-        "bool",
-    );
+    let (_, _, inputs, _, _, _, _) =
+        read_verilog_file("hdl-benchmarks/processed-netlists/2-bit-adder.v", false);
 
     let input_wires_map =
         read_input_wires("hdl-benchmarks/test-cases/2-bit-adder.inputs.csv", "bool");
@@ -391,7 +365,6 @@ fn test_input_wires_arithmetic_parser() {
     let (_, _, inputs, _, _, _, _) = read_verilog_file(
         "hdl-benchmarks/processed-netlists/chi_squared_arith.v",
         true,
-        "u32",
     );
 
     let input_wires_map = read_input_wires(
@@ -410,5 +383,5 @@ fn test_input_wires_arithmetic_parser() {
 #[should_panic(expected = "Can't mix LUTs with arithmetic operators!")]
 fn test_arithmetic_with_luts_parser() {
     let (_, _, _, _, _, _, _) =
-        read_verilog_file("hdl-benchmarks/processed-netlists/invalid.v", true, "bool");
+        read_verilog_file("hdl-benchmarks/processed-netlists/invalid.v", true);
 }

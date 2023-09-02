@@ -51,7 +51,6 @@ pub struct Gate {
     level: usize,
     cycle: usize,
     output: PtxtType,
-    multibit_output: Option<u64>,
     encrypted_gate_output: Option<Ciphertext>,
     encrypted_lut_output: Option<CiphertextBase>,
     encrypted_multibit_output: FheType,
@@ -116,7 +115,6 @@ impl Gate {
             level,
             cycle: 0,
             output: PtxtType::None,
-            multibit_output: None,
             encrypted_gate_output: None,
             encrypted_lut_output: None,
             encrypted_multibit_output: FheType::None,
@@ -160,6 +158,10 @@ impl Gate {
                             shift_amt += 1 << (end - input_idx);
                         }
                     } else {
+                        println!(
+                            "LINE THAT ERRORS: {:?} --> {:?}, Gate: {:?}",
+                            input_values, input_val, self
+                        );
                         panic!("Expected PtxtType::Bool variant");
                     }
                 }

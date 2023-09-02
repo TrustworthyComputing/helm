@@ -1,86 +1,21 @@
-use clap::{
-    builder::PossibleValue,
-    {Arg, ArgAction, Command},
-};
 use debug_print::debug_println;
-use helm::{ascii, circuit, circuit::EvalCircuit, get_input_wire_map, verilog_parser};
+use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::time::Instant;
 use termion::color;
-use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_4_CARRY_0};
+use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_2_CARRY_0};
 use tfhe::{generate_keys, ConfigBuilder};
 
-fn parse_args() -> (
-    String,
-    usize,
-    bool,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let matches = Command::new("HELM")
-        .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
-        .arg(
-            Arg::new("input")
-                .long("input")
-                .value_name("FILE")
-                .help("Verilog input file to evaluate")
-                .required(true),
-        )
-        .arg(
-            Arg::new("wires")
-                .long("wires")
-                .value_name("FILE")
-                .help("Input wire values")
-                .required(false),
-        )
-        .arg(
-            Arg::new("output-wires")
-                .long("output-wires")
-                .value_name("FILE")
-                .help("Path to a file to write the output wires")
-                .required(false)
-                .value_parser(clap::value_parser!(String)),
-        )
-        .arg(
-            Arg::new("cycles")
-                .long("cycles")
-                .value_name("NUMBER")
-                .help("Number of cycles for sequential circuits")
-                .required(false)
-                .default_value("1")
-                .value_parser(clap::value_parser!(usize)),
-        )
-        .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .help("Turn verbose printing on")
-                .required(false)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("arithmetic")
-                .long("arithmetic")
-                .value_name("TYPE")
-                .help("Datatype for arithmetic evaluation")
-                .value_parser([
-                    PossibleValue::new("u8"),
-                    PossibleValue::new("u16"),
-                    PossibleValue::new("u32"),
-                    PossibleValue::new("u64"),
-                    PossibleValue::new("u128"),
-                ])
-                .required(false),
-        )
-        .get_matches();
+fn main() {
+    ascii::print_art();
+    let matches = helm::parse_args();
     let file_name = matches
-        .get_one::<String>("input")
+        .get_one::<String>("verilog")
         .expect("Verilog input file is required");
     let num_cycles = *matches.get_one::<usize>("cycles").expect("required");
     let verbose = matches.get_flag("verbose");
-    let input_wires = matches.get_one::<String>("wires").cloned();
-    let output_wires = matches.get_one::<String>("output-wires").cloned();
-    let arithmetic = matches.get_one::<String>("arithmetic").cloned();
+    let inputs_filename = matches.get_one::<String>("input-wires-file").cloned();
+    let outputs_filename = matches.get_one::<String>("output-wires-file").cloned();
+    let arithmetic = matches.get_one::<String>("arithmetic");
 
     // TODO: Add support for this.
     // If it's arithmetic and the num_cycles variable has been set
@@ -88,20 +23,34 @@ fn parse_args() -> (
         panic!("Arithmetic does not currently support sequential. Set num_cycles to 1.");
     }
 
-    (
-        file_name.to_string(),
-        num_cycles,
-        verbose,
-        arithmetic,
-        input_wires,
-        output_wires,
-    )
-}
+    let wire_inputs = if let Some(occurrences) = matches.get_occurrences("input-wires") {
+        occurrences
+            .map(Iterator::collect)
+            .collect::<Vec<Vec<&String>>>()
+    } else {
+        vec![]
+    };
 
-fn main() {
-    ascii::print_art();
-    let (file_name, num_cycles, verbose, arithmetic, inputs_filename, outputs_filename) =
-        parse_args();
+    let (gates_set, wire_set, input_wires, output_wires, dff_outputs, has_luts, _) =
+        verilog_parser::read_verilog_file(file_name, arithmetic.is_some());
+
+    let is_sequential = dff_outputs.len() > 1;
+    if num_cycles > 1 && !is_sequential {
+        panic!(
+            "{}[!]{} Cannot run combinational circuit for more than one cycles.",
+            color::Fg(color::LightRed),
+            color::Fg(color::Reset)
+        );
+    }
+    let mut circuit_ptxt =
+        circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
+
+    circuit_ptxt.sort_circuit();
+    circuit_ptxt.compute_levels();
+    #[cfg(debug_assertions)]
+    circuit_ptxt.print_level_map();
+    debug_println!();
+
     if let Some(arithmetic_type) = arithmetic {
         println!(
             "{} -- Arithmetic mode with {} -- {}",
@@ -115,18 +64,6 @@ fn main() {
             _ => unreachable!(),
         }
 
-        let input_wire_map = get_input_wire_map(inputs_filename, arithmetic_type);
-        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, _, _) =
-            verilog_parser::read_verilog_file(&file_name, true, arithmetic_type);
-        let mut circuit_ptxt =
-            circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
-
-        circuit_ptxt.sort_circuit();
-        circuit_ptxt.compute_levels();
-        #[cfg(debug_assertions)]
-        circuit_ptxt.print_level_map();
-        debug_println!();
-
         // Arithmetic mode
         let config = ConfigBuilder::all_disabled()
             .enable_custom_integers(
@@ -139,10 +76,13 @@ fn main() {
         let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
+        let input_wire_map =
+            helm::get_input_wire_map(inputs_filename, wire_inputs, arithmetic_type);
+
         // Client encrypts their inputs
         start = Instant::now();
         let mut enc_wire_map =
-            EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+            EvalCircuit::encrypt_inputs(&mut circuit, &wire_set, &input_wire_map);
         println!(
             "Encryption done in {} seconds.",
             start.elapsed().as_secs_f64()
@@ -168,42 +108,9 @@ fn main() {
         );
     } else {
         let arithmetic_type = "bool";
-        let input_wire_map = get_input_wire_map(inputs_filename, arithmetic_type);
-        let (gates_set, wire_map_im, input_wires, output_wires, dff_outputs, has_luts, _) =
-            verilog_parser::read_verilog_file(&file_name, false, arithmetic_type);
-        let is_sequential = dff_outputs.len() > 1;
-        let mut circuit_ptxt =
-            circuit::Circuit::new(gates_set, &input_wires, &output_wires, &dff_outputs);
-        if num_cycles > 1 && !is_sequential {
-            panic!(
-                "{}[!]{} Cannot run combinational circuit for more than one cycles.",
-                color::Fg(color::LightRed),
-                color::Fg(color::Reset)
-            );
-        }
-        circuit_ptxt.sort_circuit();
-        circuit_ptxt.compute_levels();
-        #[cfg(debug_assertions)]
-        circuit_ptxt.print_level_map();
-        debug_println!();
-
         // Initialization of inputs
-        let mut wire_map =
-            circuit_ptxt.initialize_wire_map(&wire_map_im, &input_wire_map, arithmetic_type);
-        debug_println!("before eval wire_map: {:?}", wire_map);
-
-        // Plaintext evaluation
-        for cycle in 0..num_cycles {
-            wire_map = circuit_ptxt.evaluate(&wire_map);
-            println!("Cycle {}) Evaluation:", cycle);
-
-            #[cfg(debug_assertions)]
-            for wire_name in &output_wires {
-                println!(" {}: {}", wire_name, wire_map[wire_name]);
-            }
-            #[cfg(debug_assertions)]
-            println!();
-        }
+        let input_wire_map =
+            helm::get_input_wire_map(inputs_filename, wire_inputs, arithmetic_type);
 
         // Encrypted Evaluation
         if !has_luts {
@@ -222,7 +129,7 @@ fn main() {
             // Client encrypts their inputs
             start = Instant::now();
             let mut enc_wire_map =
-                EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+                EvalCircuit::encrypt_inputs(&mut circuit, &wire_set, &input_wire_map);
             println!(
                 "Encryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
@@ -261,14 +168,14 @@ fn main() {
 
             // LUT mode
             let mut start = Instant::now();
-            let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_4_CARRY_0); // single bit ctxt
+            let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_2_CARRY_0); // single bit ctxt
             let mut circuit = circuit::LutCircuit::new(client_key, server_key, circuit_ptxt);
             println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
             // Client encrypts their inputs
             start = Instant::now();
             let mut enc_wire_map =
-                EvalCircuit::encrypt_inputs(&mut circuit, &wire_map_im, &input_wire_map);
+                EvalCircuit::encrypt_inputs(&mut circuit, &wire_set, &input_wire_map);
             println!(
                 "Encryption done in {} seconds.",
                 start.elapsed().as_secs_f64()
