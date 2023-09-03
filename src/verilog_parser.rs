@@ -47,6 +47,8 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "mult" => GateType::Mult,
         "div" => GateType::Div,
         "sub" => GateType::Sub,
+        "shl" => GateType::Shl,
+        "shr" => GateType::Shr,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -221,6 +223,8 @@ pub fn read_verilog_file(
                     || gate.get_gate_type() == GateType::Sub
                     || gate.get_gate_type() == GateType::Mult
                     || gate.get_gate_type() == GateType::Div
+                    || gate.get_gate_type() == GateType::Shl 
+                    || gate.get_gate_type() == GateType::Shr
                 {
                     has_arith = true;
                 }

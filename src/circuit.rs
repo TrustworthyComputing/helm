@@ -838,6 +838,10 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                             gate.evaluate_encrypted_mul_block_plain(&ct_op, ptxt_operand, cycle)
                         } else if gate.get_gate_type() == GateType::Div {
                             gate.evaluate_encrypted_div_block_plain(&ct_op, ptxt_operand, cycle)
+                        } else if gate.get_gate_type() == GateType::Shl {
+                            gate.evaluate_encrypted_shift_block_plain(&ct_op, ptxt_operand, cycle, true)
+                        } else if gate.get_gate_type() == GateType::Shr {
+                            gate.evaluate_encrypted_shift_block_plain(&ct_op, ptxt_operand, cycle, false)
                         } else {
                             unreachable!();
                         }
@@ -875,6 +879,19 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                                 &input_values[1],
                                 cycle,
                             )
+                        } else if gate.get_gate_type() == GateType::Shl {
+                            gate.evaluate_encrypted_shift_block(
+                                &input_values[0], 
+                                &input_values[1], 
+                                cycle, 
+                                true,
+                            )
+                        } else if gate.get_gate_type() == GateType::Shr {
+                            gate.evaluate_encrypted_shift_block(
+                                &input_values[0], 
+                                &input_values[1], 
+                                cycle, 
+                                false)
                         } else {
                             gate.evaluate_encrypted_mul_block(
                                 &input_values[0],

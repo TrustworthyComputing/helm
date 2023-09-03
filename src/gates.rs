@@ -39,6 +39,8 @@ pub enum GateType {
     Add,       // add  ID(in0, in1, out);
     Sub,       // sub  ID(in0, in1, out);
     Div,       // div  ID(in0, in1, out);
+    Shl,       // shl  ID(in0, in1, out);
+    Shr,       // shr  ID(in0, in1, out);
 }
 
 #[derive(Clone)]
@@ -176,6 +178,8 @@ impl Gate {
             GateType::Div => unreachable!(),
             GateType::Add => unreachable!(),
             GateType::Sub => unreachable!(),
+            GateType::Shl => unreachable!(),
+            GateType::Shr => unreachable!(),
             GateType::Mux => match (&input_values[2], &input_values[0], &input_values[1]) {
                 (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
                     PtxtType::Bool((*select && *in_0) || (!select && *in_1))
@@ -249,6 +253,8 @@ impl Gate {
             GateType::Mult => panic!("Mult gates can't be mixed with Boolean ops!"),
             GateType::Div => panic!("Div gates can't be mixed with Boolean ops!"),
             GateType::Sub => panic!("Sub gates can't be mixed with Boolean ops!"),
+            GateType::Shl => panic!("Left shifts can't be mixed with Boolean ops!"),
+            GateType::Shr => panic!("Right shifts can't be mixed with Boolean ops!"),
             GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
             GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
             GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
@@ -448,6 +454,120 @@ impl Gate {
                 FheType::U128(ct1_value + ct2_value)
             }
             _ => panic!("evaluate_encrypted_add_block"),
+        };
+
+        self.cycle = cycle;
+        self.encrypted_multibit_output.clone()
+    }
+
+    pub fn evaluate_encrypted_shift_block(
+        &mut self,
+        ct1: &FheType,
+        ct2: &FheType,
+        cycle: usize,
+        dir : bool, // true for left shifts
+    ) -> FheType {
+        if self.cycle == cycle {
+            match self.encrypted_multibit_output {
+                FheType::None => (),
+                _ => return self.encrypted_multibit_output.clone(),
+            }
+        }
+
+        self.encrypted_multibit_output = match (ct1, ct2) {
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => {
+                if dir {
+                    FheType::U8(ct1_value << ct2_value)
+                } else {
+                    FheType::U8(ct1_value >> ct2_value)
+                }
+            }
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                if dir {
+                    FheType::U16(ct1_value << ct2_value)
+                } else {
+                    FheType::U16(ct1_value >> ct2_value)
+                }
+            }
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                if dir {
+                    FheType::U32(ct1_value << ct2_value)
+                } else {
+                    FheType::U32(ct1_value >> ct2_value)
+                }
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                if dir {
+                    FheType::U64(ct1_value << ct2_value)
+                } else {
+                    FheType::U64(ct1_value >> ct2_value)
+                }
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                if dir {
+                    FheType::U128(ct1_value << ct2_value)
+                } else {
+                    FheType::U128(ct1_value >> ct2_value)
+                }
+            }
+            _ => panic!("evaluate_encrypted_shift_block"),
+        };
+
+        self.cycle = cycle;
+        self.encrypted_multibit_output.clone()
+    }
+
+    pub fn evaluate_encrypted_shift_block_plain(
+        &mut self,
+        ct1: &FheType,
+        pt1: PtxtType,
+        cycle: usize,
+        dir: bool, // true for left shifts
+    ) -> FheType {
+        if self.cycle == cycle {
+            match self.encrypted_multibit_output {
+                FheType::None => (),
+                _ => return self.encrypted_multibit_output.clone(),
+            }
+        }
+
+        self.encrypted_multibit_output = match (ct1, pt1) {
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => { 
+                if dir {
+                    FheType::U8(ct1_value << pt1_value)
+                } else {
+                    FheType::U8(ct1_value >> pt1_value)
+                }
+            }
+            (FheType::U16(ct1_value), PtxtType::U16(pt1_value)) => {
+                if dir {
+                    FheType::U16(ct1_value << pt1_value)
+                } else {
+                    FheType::U16(ct1_value >> pt1_value)
+                }
+            }
+            (FheType::U32(ct1_value), PtxtType::U32(pt1_value)) => {
+                if dir {
+                    FheType::U32(ct1_value << pt1_value)
+                } else {
+                    FheType::U32(ct1_value >> pt1_value)
+                }
+            }
+            (FheType::U64(ct1_value), PtxtType::U64(pt1_value)) => {
+                if dir {
+                    FheType::U64(ct1_value << pt1_value)
+                } else {
+                    FheType::U64(ct1_value >> pt1_value)
+                }
+            }
+            (FheType::U128(ct1_value), PtxtType::U128(pt1_value)) => {
+                if dir {
+                    FheType::U128(ct1_value << pt1_value)
+                } else {
+                    FheType::U128(ct1_value >> pt1_value)
+                }
+            }
+            _ => panic!("evaluate_encrypted_shift_block_plain"),
         };
 
         self.cycle = cycle;
