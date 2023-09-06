@@ -892,6 +892,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                                 &input_values[1], 
                                 cycle, 
                                 false)
+                        } else if gate.get_gate_type() == GateType::Copy {
+                            gate.evaluate_encrypted_copy_block(
+                                &input_values[0], 
+                                cycle, 
+                            )    
                         } else {
                             gate.evaluate_encrypted_mul_block(
                                 &input_values[0],

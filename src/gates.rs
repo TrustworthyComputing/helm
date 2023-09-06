@@ -41,6 +41,7 @@ pub enum GateType {
     Div,       // div  ID(in0, in1, out);
     Shl,       // shl  ID(in0, in1, out);
     Shr,       // shr  ID(in0, in1, out);
+    Copy,      // copy ID(in, out);
 }
 
 #[derive(Clone)]
@@ -180,6 +181,7 @@ impl Gate {
             GateType::Sub => unreachable!(),
             GateType::Shl => unreachable!(),
             GateType::Shr => unreachable!(),
+            GateType::Copy => unreachable!(),
             GateType::Mux => match (&input_values[2], &input_values[0], &input_values[1]) {
                 (PtxtType::Bool(select), PtxtType::Bool(in_0), PtxtType::Bool(in_1)) => {
                     PtxtType::Bool((*select && *in_0) || (!select && *in_1))
@@ -255,6 +257,7 @@ impl Gate {
             GateType::Sub => panic!("Sub gates can't be mixed with Boolean ops!"),
             GateType::Shl => panic!("Left shifts can't be mixed with Boolean ops!"),
             GateType::Shr => panic!("Right shifts can't be mixed with Boolean ops!"),
+            GateType::Copy => panic!("Arithmetic copies can't be mixed with Boolean ops!"),
             GateType::Mux => server_key.mux(&input_values[2], &input_values[0], &input_values[1]),
             GateType::Nand => server_key.nand(&input_values[0], &input_values[1]),
             GateType::Nor => server_key.nor(&input_values[0], &input_values[1]),
@@ -288,6 +291,22 @@ impl Gate {
         self.encrypted_lut_output = Some(ret.clone());
 
         ret
+    }
+
+    pub fn evaluate_encrypted_copy_block(
+        &mut self,
+        ct1: &FheType,
+        cycle: usize,
+    ) -> FheType {
+        if self.cycle == cycle {
+            match self.encrypted_multibit_output {
+                FheType::None => (),
+                _ => return self.encrypted_multibit_output.clone(),
+            }
+        }
+        self.encrypted_multibit_output = ct1.clone();
+        self.cycle = cycle;
+        self.encrypted_multibit_output.clone()
     }
 
     pub fn evaluate_encrypted_mul_block(

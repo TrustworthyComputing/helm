@@ -49,6 +49,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         "sub" => GateType::Sub,
         "shl" => GateType::Shl,
         "shr" => GateType::Shr,
+        "copy" => GateType::Copy,
         _ => panic!("Invalid gate type \"{}\"", tokens[0]),
     };
 
@@ -78,6 +79,11 @@ fn parse_gate(tokens: &[&str]) -> Gate {
         GateType::ConstOne | GateType::ConstZero => {
             let output_wire = String::from(extract_const_val(tokens[1]));
             (vec![], output_wire)
+        }
+        GateType::Copy => {
+            let input_wires = vec![String::from(name_and_inputs[1])];
+            let output_wire = String::from(tokens[2].trim_end_matches(';').trim_end_matches(')'));
+            (input_wires, output_wire)
         }
         _ => {
             let mut input_wires = vec![String::from(name_and_inputs[1])];
@@ -225,6 +231,7 @@ pub fn read_verilog_file(
                     || gate.get_gate_type() == GateType::Div
                     || gate.get_gate_type() == GateType::Shl 
                     || gate.get_gate_type() == GateType::Shr
+                    || gate.get_gate_type() == GateType::Copy
                 {
                     has_arith = true;
                 }
