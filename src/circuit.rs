@@ -777,8 +777,9 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
             .unzip();
 
+        set_server_key(self.server_key.clone());
         rayon::broadcast(|_| set_server_key(self.server_key.clone()));
-
+         
         // For each level
         let total_levels = self.circuit.level_map.len();
         for (level, gates) in self
@@ -917,7 +918,9 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             });
             println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         }
+
         rayon::broadcast(|_| unset_server_key());
+        unset_server_key();
 
         key_to_index
             .iter()
