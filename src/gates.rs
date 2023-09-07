@@ -278,7 +278,7 @@ impl Gate {
     pub fn evaluate_encrypted_lut(
         &mut self,
         server_key: &ServerKeyShortInt,
-        input_values: &Vec<CiphertextBase>,
+        input_values: &mut Vec<CiphertextBase>,
         cycle: usize,
     ) -> CiphertextBase {
         if let Some(encrypted_lut_output) = self.encrypted_lut_output.clone() {
@@ -744,13 +744,14 @@ fn eval_luts(x: u64, lut_table: &Vec<u64>) -> u64 {
 pub fn lut(
     sks: &ServerKeyShortInt,
     lut_const: &Vec<u64>,
-    ctxts: &Vec<CiphertextBase>,
+    ctxts: &mut Vec<CiphertextBase>,
 ) -> CiphertextBase {
     // Σ ctxts[i] * 2^i
+    let ctxts_len = (ctxts.len() - 1) as u8;
     let ct_sum = ctxts
-        .iter()
+        .iter_mut()
         .enumerate()
-        .map(|(i, ct)| sks.scalar_mul(ct, 1 << (ctxts.len() - 1 - i)))
+        .map(|(i, ct)| sks.smart_scalar_left_shift(ct, ctxts_len - i as u8))
         .fold(sks.create_trivial(0), |acc, ct| sks.add(&acc, &ct));
 
     // Generate LUT entries from lut_const

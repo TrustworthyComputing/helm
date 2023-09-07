@@ -621,7 +621,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
         {
             // Evaluate all the gates in the level in parallel
             gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<CtxtShortInt> = gate
+                let mut input_values: Vec<CtxtShortInt> = gate
                     .get_input_wires()
                     .iter()
                     .map(|input| {
@@ -637,7 +637,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
                     .collect();
                 let output_value = {
                     if gate.get_gate_type() == GateType::Lut {
-                        gate.evaluate_encrypted_lut(&self.server_key, &input_values, cycle)
+                        gate.evaluate_encrypted_lut(&self.server_key, &mut input_values, cycle)
                     } else {
                         gate.evaluate_encrypted_dff(&input_values, cycle)
                     }
