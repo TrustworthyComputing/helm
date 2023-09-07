@@ -87,10 +87,6 @@ impl FheType {
     }
 }
 
-// arithmetic -i a 15
-// boolean: 1) -i a[0] 1 -i a[1] 0 ...
-// boolean: 1) -i aeskey 0 ...
-
 pub fn get_input_wire_map(
     inputs_filename: Option<String>,
     wire_inputs: Vec<Vec<&String>>,
@@ -110,8 +106,6 @@ pub fn get_input_wire_map(
             color::Fg(color::LightGreen),
             color::Fg(color::Reset)
         );
-
-        // [[wire1, value1], [wire2, value2], [wire3, value3]]
 
         wire_inputs
             .iter()
@@ -140,7 +134,19 @@ pub fn get_input_wire_map(
             color::Fg(color::Reset)
         );
 
-        HashMap::new()
+        let mut input_wire_map = HashMap::new();
+        let ptxt = match arithmetic_type {
+            "bool" => PtxtType::Bool(false),
+            "u8" => PtxtType::U8(0),
+            "u16" => PtxtType::U16(0),
+            "u32" => PtxtType::U32(0),
+            "u64" => PtxtType::U64(0),
+            "u128" => PtxtType::U128(0),
+            _ => unreachable!(),
+        };
+        input_wire_map.insert("dummy".to_string(), ptxt);
+        
+        input_wire_map
     }
 }
 

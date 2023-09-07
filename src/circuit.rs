@@ -454,7 +454,7 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
 
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.is_empty() {
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
                 enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt(false));
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not in input wires!", input_wire);
@@ -538,8 +538,9 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
         let mut decrypted_outputs = HashMap::new();
-
+        println!("enc_wire_map: {:?}", &enc_wire_map.keys());
         for output_wire in self.circuit.output_wires {
+            println!("output wire: {:?}", &output_wire);
             let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
             decrypted_outputs.insert(output_wire.clone(), PtxtType::Bool(decrypted_value));
         }
@@ -573,7 +574,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
             .collect::<HashMap<_, _>>();
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.is_empty() {
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
                 enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt(0));
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
@@ -666,7 +667,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
         let mut decrypted_outputs = HashMap::new();
-
+        println!("enc_wire_map: {:?}", &enc_wire_map.keys());
         for output_wire in self.circuit.output_wires {
             let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
             decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted_value));
@@ -709,7 +710,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         }
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.is_empty() {
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
                 let encrypted_value = match ptxt_type {
                     "u8" => FheType::U8(FheUint8::try_encrypt(0, &self.client_key).unwrap()),
                     "u16" => FheType::U16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
@@ -974,7 +975,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
             .collect::<HashMap<_, _>>();
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
-            if input_wire_map.is_empty() {
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
                 enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt_one_block(0));
             } else if !input_wire_map.contains_key(input_wire) {
                 panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
