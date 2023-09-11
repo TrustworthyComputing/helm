@@ -1,13 +1,13 @@
 <h1 align="center">HELM <a href="https://github.com/jimouris/helm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
 
-<h2 align="center">HELM: Homomorphic Evaluation with Lookup table Memoization</h2>
+<h2 align="center">HELM: Navigating Homomorphic Evaluation through Gates and Lookups</h2>
 
 
 ## Overview
 HELM is a framework for evaluating synthesizable HDL designs in the encrypted
 domain that is designed for multi-core CPU evaluation. Users can choose between
 evaluating circuits composed of standard Boolean gates, low-precision LUTs, or
-high-precision arithmetic operations. 
+high-precision arithmetic operations.
 In all cases, both sequential and combinational circuits are supported with the
 exception of arithmetic circuits (which only support combinational logic).
 
@@ -55,7 +55,7 @@ You can also pass the input wire values as:
 ```shell
 cargo run --bin helm --release -- \
     --verilog ./hdl-benchmarks/processed-netlists/2-bit-adder.v \
-    -w a[0] 1 -w a[1] 0 -w b[0] 0 -w b[1] 1 -w cin 0 
+    -w a[0] 1 -w a[1] 0 -w b[0] 0 -w b[1] 1 -w cin 0
 ```
 
 

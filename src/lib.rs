@@ -75,7 +75,7 @@ impl fmt::Display for PtxtType {
 }
 
 impl FheType {
-    fn decrypt(&self, client_key: &tfhe::ClientKey) -> PtxtType {
+    pub fn decrypt(&self, client_key: &tfhe::ClientKey) -> PtxtType {
         match self {
             FheType::U8(inner_value) => PtxtType::U8(inner_value.decrypt(client_key)),
             FheType::U16(inner_value) => PtxtType::U16(inner_value.decrypt(client_key)),
@@ -86,6 +86,11 @@ impl FheType {
         }
     }
 }
+
+// TODO
+// arithmetic -i a 15
+// boolean: 1) -i a[0] 1 -i a[1] 0 ...
+// boolean: 1) -i aeskey 0 ...
 
 pub fn get_input_wire_map(
     inputs_filename: Option<String>,
@@ -107,6 +112,7 @@ pub fn get_input_wire_map(
             color::Fg(color::Reset)
         );
 
+        // [[wire1, value1], [wire2, value2], [wire3, value3]]
         wire_inputs
             .iter()
             .map(|parts| {
@@ -152,7 +158,7 @@ pub fn get_input_wire_map(
 
 pub fn parse_args() -> ArgMatches {
     Command::new("HELM")
-        .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
+        .about("HELM: Navigating Homomorphic Evaluation through Gates and Lookups")
         .arg(
             Arg::new("verilog")
                 .long("verilog")
