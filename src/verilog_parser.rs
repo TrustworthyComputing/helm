@@ -285,7 +285,10 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
         let input_wire = record[0].trim().to_string();
         match ptxt_type {
             "bool" => {
-                let init_value = record[1].trim().to_string().parse::<bool>().unwrap();
+                let init_value = match record[1].trim() {
+                    "1" => true,
+                    s => s.parse::<bool>().unwrap_or(false),
+                };
                 input_map.insert(input_wire, PtxtType::Bool(init_value));
             }
             "u8" => {

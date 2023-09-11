@@ -146,7 +146,7 @@ pub fn get_input_wire_map(
 
 pub fn parse_args() -> ArgMatches {
     Command::new("HELM")
-        .about("HELM: Homomorphic Evaluation with EDA-driven Logic Minimization")
+        .about("HELM: Navigating Homomorphic Evaluation through Gates and Lookups")
         .arg(
             Arg::new("verilog")
                 .long("verilog")
