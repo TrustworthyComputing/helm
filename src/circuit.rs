@@ -538,14 +538,12 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
         let mut decrypted_outputs = HashMap::new();
-        println!("enc_wire_map: {:?}", &enc_wire_map.keys());
         for output_wire in self.circuit.output_wires {
-            println!("output wire: {:?}", &output_wire);
             let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
             decrypted_outputs.insert(output_wire.clone(), PtxtType::Bool(decrypted_value));
         }
 
-        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -667,13 +665,12 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
         let mut decrypted_outputs = HashMap::new();
-        println!("enc_wire_map: {:?}", &enc_wire_map.keys());
         for output_wire in self.circuit.output_wires {
             let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
             decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted_value));
         }
 
-        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -780,7 +777,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
 
         set_server_key(self.server_key.clone());
         rayon::broadcast(|_| set_server_key(self.server_key.clone()));
-         
+
         // For each level
         let total_levels = self.circuit.level_map.len();
         for (level, gates) in self
@@ -841,9 +838,19 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                         } else if gate.get_gate_type() == GateType::Div {
                             gate.evaluate_encrypted_div_block_plain(&ct_op, ptxt_operand, cycle)
                         } else if gate.get_gate_type() == GateType::Shl {
-                            gate.evaluate_encrypted_shift_block_plain(&ct_op, ptxt_operand, cycle, true)
+                            gate.evaluate_encrypted_shift_block_plain(
+                                &ct_op,
+                                ptxt_operand,
+                                cycle,
+                                true,
+                            )
                         } else if gate.get_gate_type() == GateType::Shr {
-                            gate.evaluate_encrypted_shift_block_plain(&ct_op, ptxt_operand, cycle, false)
+                            gate.evaluate_encrypted_shift_block_plain(
+                                &ct_op,
+                                ptxt_operand,
+                                cycle,
+                                false,
+                            )
                         } else {
                             unreachable!();
                         }
@@ -883,22 +890,20 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                             )
                         } else if gate.get_gate_type() == GateType::Shl {
                             gate.evaluate_encrypted_shift_block(
-                                &input_values[0], 
-                                &input_values[1], 
-                                cycle, 
+                                &input_values[0],
+                                &input_values[1],
+                                cycle,
                                 true,
                             )
                         } else if gate.get_gate_type() == GateType::Shr {
                             gate.evaluate_encrypted_shift_block(
-                                &input_values[0], 
-                                &input_values[1], 
-                                cycle, 
-                                false)
+                                &input_values[0],
+                                &input_values[1],
+                                cycle,
+                                false,
+                            )
                         } else if gate.get_gate_type() == GateType::Copy {
-                            gate.evaluate_encrypted_copy_block(
-                                &input_values[0], 
-                                cycle, 
-                            )    
+                            gate.evaluate_encrypted_copy_block(&input_values[0], cycle)
                         } else {
                             gate.evaluate_encrypted_mul_block(
                                 &input_values[0],
@@ -941,7 +946,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             decrypted_outputs.insert(output_wire.clone(), decrypted);
         }
 
-        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -966,12 +971,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
     ) -> HashMap<String, CtxtShortInt> {
         let mut enc_wire_map = wire_set
             .iter()
-            .map(|wire| {
-                (
-                    wire.to_string(),
-                    self.client_key.encrypt_one_block(0u64),
-                )
-            })
+            .map(|wire| (wire.to_string(), self.client_key.encrypt_one_block(0u64)))
             .collect::<HashMap<_, _>>();
         for input_wire in self.circuit.input_wires {
             // if no inputs are provided, initialize it to false
@@ -1078,7 +1078,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
             decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted));
         }
 
-        for (i, (wire, val)) in decrypted_outputs.iter().enumerate() {
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
             if i > 10 && !verbose {
                 println!(
                     "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
@@ -1284,7 +1284,7 @@ fn test_evaluate_encrypted_circuit() {
 fn test_evaluate_encrypted_lut_circuit() {
     let datatype = "bool";
     let (gates_set, wire_set, input_wires, _, _, _, _) = crate::verilog_parser::read_verilog_file(
-        "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
+        "hdl-benchmarks/processed-netlists/8-bit-adder-lut-2-1.v",
         false,
     );
     let input_wire_map = crate::verilog_parser::read_input_wires(

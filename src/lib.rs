@@ -17,7 +17,7 @@ pub enum PtxtError {
     InvalidInput,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PtxtType {
     Bool(bool),
     U8(u8),
@@ -145,7 +145,7 @@ pub fn get_input_wire_map(
             _ => unreachable!(),
         };
         input_wire_map.insert("dummy".to_string(), ptxt);
-        
+
         input_wire_map
     }
 }

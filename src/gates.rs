@@ -293,11 +293,7 @@ impl Gate {
         ret
     }
 
-    pub fn evaluate_encrypted_copy_block(
-        &mut self,
-        ct1: &FheType,
-        cycle: usize,
-    ) -> FheType {
+    pub fn evaluate_encrypted_copy_block(&mut self, ct1: &FheType, cycle: usize) -> FheType {
         if self.cycle == cycle {
             match self.encrypted_multibit_output {
                 FheType::None => (),
@@ -484,7 +480,7 @@ impl Gate {
         ct1: &FheType,
         ct2: &FheType,
         cycle: usize,
-        dir : bool, // true for left shifts
+        dir: bool, // true for left shifts
     ) -> FheType {
         if self.cycle == cycle {
             match self.encrypted_multibit_output {
@@ -551,7 +547,7 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, pt1) {
-            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => { 
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => {
                 if dir {
                     FheType::U8(ct1_value << pt1_value)
                 } else {
@@ -741,24 +737,43 @@ fn eval_luts(x: u64, lut_table: &Vec<u64>) -> u64 {
     lut_table[x as usize] & 1
 }
 
+fn eval_luts_bivariate(x: u64, y: u64, lut_table: &Vec<u64>) -> u64 {
+    lut_table[(((y & 1) << 1) + (x & 1)) as usize] & 1
+}
+
+fn eval_luts_bivariate_test(x: u64, y: u64, lut_table: &Vec<u64>) -> u64 {
+    lut_table[((x & 1) * 2 + (y & 1)) as usize]
+}
+
+
 pub fn lut(
     sks: &ServerKeyShortInt,
     lut_const: &Vec<u64>,
     ctxts: &mut Vec<CiphertextBase>,
 ) -> CiphertextBase {
     // Σ ctxts[i] * 2^i
-    let ctxts_len = (ctxts.len() - 1) as u8;
-    let ct_sum = ctxts
-        .iter_mut()
-        .enumerate()
-        .map(|(i, ct)| sks.smart_scalar_left_shift(ct, ctxts_len - i as u8))
-        .fold(sks.create_trivial(0), |acc, ct| sks.add(&acc, &ct));
+    println!("lut constant: {:?}", &lut_const);
+    if ctxts.len() == 2 {
+        let mut c0 = ctxts[0].clone();
+        let wrapped_f = |lhs: u64, rhs: u64| -> u64 { u64::from(eval_luts_bivariate_test(lhs as u64, rhs as u64, lut_const)) };
+        sks.smart_evaluate_bivariate_function(&mut c0, &mut ctxts[1], wrapped_f)
+    } else if ctxts.len() == 1 {
+        println!("lut_const: {:?}", &lut_const);
+        ctxts[0].clone()
+    } else {
+        println!("shouldn't get here!");
+        let ctxts_len: u8 = (ctxts.len() - 1) as u8;
+        let ct_sum = ctxts
+            .iter_mut()
+            .enumerate()
+            .map(|(i, ct)| sks.smart_scalar_left_shift(ct, ctxts_len - i as u8))
+            .fold(sks.create_trivial(0), |acc, ct| sks.add(&acc, &ct));    
+        // Generate LUT entries from lut_const
+        let lut = sks.generate_lookup_table(|x| eval_luts(x, lut_const));
 
-    // Generate LUT entries from lut_const
-    let lut = sks.generate_lookup_table(|x| eval_luts(x, lut_const));
-
-    // Eval PBS and return
-    sks.apply_lookup_table(&ct_sum, &lut)
+        // Eval PBS and return
+        sks.apply_lookup_table(&ct_sum, &lut)
+    }
 }
 
 pub fn high_precision_lut(
