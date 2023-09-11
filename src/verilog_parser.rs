@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use termion::color;
 
 use crate::gates::{Gate, GateType};
-use crate::{parse_input_wire, PtxtType};
+use crate::{hex_to_bitstring, parse_input_wire, PtxtType};
 
 fn extract_const_val(input_str: &str) -> &str {
     let start_index = input_str.find('(').expect("Opening parenthesis not found");
@@ -19,7 +19,7 @@ fn extract_const_val(input_str: &str) -> &str {
 
 fn usize_to_bitvec(value: usize, lut_size: usize) -> Vec<u64> {
     let mut bits: Vec<u64> = Vec::new();
-    
+
     for i in 0..lut_size {
         let bit = ((value >> i) & 1) as u64;
         bits.push(bit);
@@ -108,7 +108,10 @@ fn parse_gate(tokens: &[&str]) -> Gate {
                 Err(_) => panic!("Failed to parse integer"),
             })
         };
-        Some(usize_to_bitvec(lut_const_int.unwrap(), 1 << input_wires.len()))
+        Some(usize_to_bitvec(
+            lut_const_int.unwrap(),
+            1 << input_wires.len(),
+        ))
     } else {
         None
     };
@@ -282,7 +285,7 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
         let wire_name = record[0].trim().to_string();
 
         if record.len() == 2 {
-            let wire_value = parse_input_wire(&record[1].trim().to_string(), ptxt_type);
+            let wire_value = parse_input_wire(record[1].trim(), ptxt_type);
             input_map.insert(wire_name, wire_value);
         } else if record.len() == 3 && ptxt_type == "bool" {
             let wire_width = record[2].trim().parse::<usize>().unwrap();
@@ -302,7 +305,7 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
                 }
             } else {
                 // if it's a bit.
-                let wire_value = parse_input_wire(&record[1].trim().to_string(), ptxt_type);
+                let wire_value = parse_input_wire(record[1].trim(), ptxt_type);
                 input_map.insert(wire_name, wire_value);
             }
         } else {
@@ -343,19 +346,4 @@ pub fn write_output_wires(file_name: Option<String>, input_map: &HashMap<String,
         }
         println!("Decrypted outputs written to {}", file_name);
     }
-}
-
-fn hex_to_bitstring(hex_string: &str) -> String {
-    let mut bit_string = String::new();
-    for hex_char in hex_string.chars() {
-        match hex_char.to_digit(16) {
-            Some(hex_digit) => {
-                let binary_digit = format!("{:04b}", hex_digit);
-                bit_string.push_str(&binary_digit);
-            }
-            None => unreachable!(),
-        }
-    }
-
-    bit_string
 }

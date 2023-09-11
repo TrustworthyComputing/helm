@@ -24,7 +24,7 @@ cargo test --release
 ### 2) HELM Command Line Arguments
 ```shell
   -v, --verilog <FILE>              Verilog input file to evaluate
-  -w, --input-wires <STRING> <HEX>  Input wire values (-i wire1 hex1 -i wire2 hex2 ...)
+  -w, --input-wires <STRING> <HEX>  Input wire values (-w wire1 hex1 -w wire2 hex2 ...)
   -i, --input-wires-file <FILE>     CSV file that contains the input wire values (wire, value)
   -o, --output-wires-file <FILE>    CSV file to write the output wires (wire, value)
   -c, --cycles <NUMBER>             Number of cycles for sequential circuits [default: 1]
@@ -58,6 +58,20 @@ cargo run --bin helm --release -- \
     -w a[0] 1 -w a[1] 0 -w b[0] 0 -w b[1] 1 -w cin 0
 ```
 
+Or equivalently as `wire_name hex_value wire_width`
+```shell
+cargo run --bin helm --release -- \
+    --verilog ./hdl-benchmarks/processed-netlists/2-bit-adder.v \
+    -w a 1 2 -w b[0] 0 -w b[1] 1 -w cin 0
+```
+The above expands `a` to `a[0] = 1` and `a[1] = 1`.
+
+Similarly:
+```shell
+cargo run --bin helm --release -- \
+    --verilog ./hdl-benchmarks/processed-netlists/2-bit-adder.v \
+    -w a 1 2 -w b 2 2 -w cin 0
+```
 
 #### 3.2) Lookup Tables (LUT) Mode
 Example in "LUTs"-mode:

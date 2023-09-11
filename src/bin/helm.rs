@@ -3,7 +3,8 @@ use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::time::Instant;
 use termion::color;
 use tfhe::{
-    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_1_KS_PBS, ConfigBuilder,
+    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_1_KS_PBS,
+    ConfigBuilder,
 };
 
 fn main() {

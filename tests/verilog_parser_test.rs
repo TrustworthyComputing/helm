@@ -117,7 +117,6 @@ fn integer_input_wires() {
     assert_eq!(wire_map["N2"], PtxtType::U128(9));
 }
 
-// TODO:
 /// Test get_input_wire_map with int for bits (AES example).
 #[test]
 fn bool_input_wires_array_as_int() {
