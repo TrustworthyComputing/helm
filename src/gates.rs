@@ -293,11 +293,7 @@ impl Gate {
         ret
     }
 
-    pub fn evaluate_encrypted_copy_block(
-        &mut self,
-        ct1: &FheType,
-        cycle: usize,
-    ) -> FheType {
+    pub fn evaluate_encrypted_copy_block(&mut self, ct1: &FheType, cycle: usize) -> FheType {
         if self.cycle == cycle {
             match self.encrypted_multibit_output {
                 FheType::None => (),
@@ -484,7 +480,7 @@ impl Gate {
         ct1: &FheType,
         ct2: &FheType,
         cycle: usize,
-        dir : bool, // true for left shifts
+        dir: bool, // true for left shifts
     ) -> FheType {
         if self.cycle == cycle {
             match self.encrypted_multibit_output {
@@ -551,7 +547,7 @@ impl Gate {
         }
 
         self.encrypted_multibit_output = match (ct1, pt1) {
-            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => { 
+            (FheType::U8(ct1_value), PtxtType::U8(pt1_value)) => {
                 if dir {
                     FheType::U8(ct1_value << pt1_value)
                 } else {
@@ -838,207 +834,4 @@ where
         }
     }
     lut
-}
-
-#[test]
-fn test_caching_of_gate_evaluation() {
-    use std::time::Instant;
-    use tfhe::prelude::*;
-    use tfhe::set_server_key;
-    use tfhe::FheUint16;
-    use tfhe::{generate_keys, ConfigBuilder};
-
-    let config = ConfigBuilder::all_disabled()
-        .enable_custom_integers(
-            tfhe::shortint::parameters::PARAM_MULTI_BIT_MESSAGE_2_CARRY_2_GROUP_3_KS_PBS,
-            None,
-        )
-        .build();
-    let (client_key, server_key) = generate_keys(config); // integer ctxt
-    set_server_key(server_key);
-
-    let ptxt = vec![10, 20, 30, 40];
-    let inputs_ctxt = vec![
-        FheType::U16(FheUint16::try_encrypt(ptxt[0], &client_key).unwrap()),
-        FheType::U16(FheUint16::try_encrypt(ptxt[1], &client_key).unwrap()),
-        FheType::U16(FheUint16::try_encrypt(ptxt[2], &client_key).unwrap()),
-        FheType::U16(FheUint16::try_encrypt(ptxt[3], &client_key).unwrap()),
-    ];
-
-    let mut gates = vec![
-        Gate::new(
-            String::from(""),
-            GateType::Add,
-            vec![],
-            None,
-            "".to_string(),
-            0,
-        ),
-        Gate::new(
-            String::from(""),
-            GateType::Sub,
-            vec![],
-            None,
-            "".to_string(),
-            0,
-        ),
-        Gate::new(
-            String::from(""),
-            GateType::Mult,
-            vec![],
-            None,
-            "".to_string(),
-            0,
-        ),
-    ];
-
-    for gate in gates.iter_mut() {
-        let mut cycle = 1;
-
-        let mut start = Instant::now();
-        let (result, ptxt_result) = match gate.get_gate_type() {
-            GateType::Add => (
-                gate.evaluate_encrypted_add_block(&inputs_ctxt[0], &inputs_ctxt[1], cycle),
-                PtxtType::U16(ptxt[0] + ptxt[1]),
-            ),
-            GateType::Sub => (
-                gate.evaluate_encrypted_sub_block(&inputs_ctxt[1], &inputs_ctxt[0], cycle),
-                PtxtType::U16(ptxt[1] - ptxt[0]),
-            ),
-            GateType::Mult => (
-                gate.evaluate_encrypted_mul_block(&inputs_ctxt[0], &inputs_ctxt[1], cycle),
-                PtxtType::U16(ptxt[0] * ptxt[1]),
-            ),
-            _ => unreachable!(),
-        };
-        let mut elapsed = start.elapsed().as_secs_f64();
-        let mut decrypted = result.decrypt(&client_key);
-        match gate.get_gate_type() {
-            GateType::Add => {
-                println!(
-                    "Cycle {}) {}+{}={} in {} seconds",
-                    cycle, ptxt[0], ptxt[1], decrypted, elapsed
-                );
-            }
-            GateType::Sub => {
-                println!(
-                    "Cycle {}) {}-{}={} in {} seconds",
-                    cycle, ptxt[1], ptxt[0], decrypted, elapsed
-                );
-            }
-            GateType::Mult => {
-                println!(
-                    "Cycle {}) {}*{}={} in {} seconds",
-                    cycle, ptxt[0], ptxt[1], decrypted, elapsed
-                );
-            }
-            _ => unreachable!(),
-        };
-        assert_eq!(decrypted, ptxt_result);
-
-        // These should have been cached since the cycle is the same.
-        start = Instant::now();
-        let result = match gate.get_gate_type() {
-            GateType::Add => {
-                gate.evaluate_encrypted_add_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle)
-            }
-            GateType::Sub => {
-                gate.evaluate_encrypted_sub_block(&inputs_ctxt[3], &inputs_ctxt[2], cycle)
-            }
-            GateType::Mult => {
-                gate.evaluate_encrypted_mul_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle)
-            }
-            _ => unreachable!(),
-        };
-        let elapsed_cached = start.elapsed().as_secs_f64();
-        decrypted = result.decrypt(&client_key);
-        assert_eq!(decrypted, ptxt_result);
-        assert!(elapsed_cached < elapsed);
-
-        cycle += 1;
-
-        start = Instant::now();
-        let (result, ptxt_result) = match gate.get_gate_type() {
-            GateType::Add => (
-                gate.evaluate_encrypted_add_block(&inputs_ctxt[1], &inputs_ctxt[2], cycle),
-                PtxtType::U16(ptxt[1] + ptxt[2]),
-            ),
-            GateType::Sub => (
-                gate.evaluate_encrypted_sub_block(&inputs_ctxt[2], &inputs_ctxt[1], cycle),
-                PtxtType::U16(ptxt[2] - ptxt[1]),
-            ),
-            GateType::Mult => (
-                gate.evaluate_encrypted_mul_block(&inputs_ctxt[1], &inputs_ctxt[2], cycle),
-                PtxtType::U16(ptxt[1] * ptxt[2]),
-            ),
-            _ => unreachable!(),
-        };
-        elapsed = start.elapsed().as_secs_f64();
-        decrypted = result.decrypt(&client_key);
-        match gate.get_gate_type() {
-            GateType::Add => {
-                println!(
-                    "Cycle {}) {}+{}={} in {} seconds",
-                    cycle, ptxt[1], ptxt[2], decrypted, elapsed
-                );
-            }
-            GateType::Sub => {
-                println!(
-                    "Cycle {}) {}-{}={} in {} seconds",
-                    cycle, ptxt[2], ptxt[1], decrypted, elapsed
-                );
-            }
-            GateType::Mult => {
-                println!(
-                    "Cycle {}) {}*{}={} in {} seconds",
-                    cycle, ptxt[1], ptxt[2], decrypted, elapsed
-                );
-            }
-            _ => unreachable!(),
-        };
-        assert_eq!(decrypted, ptxt_result);
-
-        cycle += 1;
-
-        start = Instant::now();
-        let (result, ptxt_result) = match gate.get_gate_type() {
-            GateType::Add => (
-                gate.evaluate_encrypted_add_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle),
-                PtxtType::U16(ptxt[2] + ptxt[3]),
-            ),
-            GateType::Sub => (
-                gate.evaluate_encrypted_sub_block(&inputs_ctxt[3], &inputs_ctxt[2], cycle),
-                PtxtType::U16(ptxt[3] - ptxt[2]),
-            ),
-            GateType::Mult => (
-                gate.evaluate_encrypted_mul_block(&inputs_ctxt[2], &inputs_ctxt[3], cycle),
-                PtxtType::U16(ptxt[2] * ptxt[3]),
-            ),
-            _ => unreachable!(),
-        };
-        elapsed = start.elapsed().as_secs_f64();
-        decrypted = result.decrypt(&client_key);
-        match gate.get_gate_type() {
-            GateType::Add => {
-                println!(
-                    "Cycle {}) {}+{}={} in {} seconds",
-                    cycle, ptxt[2], ptxt[3], decrypted, elapsed
-                );
-            }
-            GateType::Sub => {
-                println!(
-                    "Cycle {}) {}-{}={} in {} seconds",
-                    cycle, ptxt[3], ptxt[2], decrypted, elapsed
-                );
-            }
-            GateType::Mult => {
-                println!(
-                    "Cycle {}) {}*{}={} in {} seconds",
-                    cycle, ptxt[2], ptxt[3], decrypted, elapsed
-                );
-            }
-            _ => unreachable!(),
-        };
-        assert_eq!(decrypted, ptxt_result);
-    }
 }

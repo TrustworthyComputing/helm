@@ -2,8 +2,9 @@ use debug_print::debug_println;
 use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::time::Instant;
 use termion::color;
-use tfhe::{boolean::prelude::*, shortint::parameters::PARAM_MESSAGE_2_CARRY_0};
-use tfhe::{generate_keys, ConfigBuilder};
+use tfhe::{
+    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_0, ConfigBuilder,
+};
 
 fn main() {
     ascii::print_art();
