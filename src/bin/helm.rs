@@ -3,7 +3,7 @@ use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
 use std::time::Instant;
 use termion::color;
 use tfhe::{
-    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_0, ConfigBuilder,
+    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_1_KS_PBS, ConfigBuilder,
 };
 
 fn main() {
@@ -169,7 +169,7 @@ fn main() {
 
             // LUT mode
             let mut start = Instant::now();
-            let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_2_CARRY_0); // single bit ctxt
+            let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_2_CARRY_1_KS_PBS); // single bit ctxt
             let mut circuit = circuit::LutCircuit::new(client_key, server_key, circuit_ptxt);
             println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 

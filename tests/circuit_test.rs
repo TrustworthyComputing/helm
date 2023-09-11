@@ -16,7 +16,7 @@ use tfhe::{
     shortint::{
         parameters::{
             parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
-            PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_3_CARRY_0,
+            PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_2_CARRY_1_KS_PBS,
         },
         wopbs::WopbsKey as WopbsKeyShortInt,
     },
@@ -106,7 +106,7 @@ fn encrypted_two_bit_adder() {
 fn encrypted_eight_bit_adder_lut() {
     let datatype = "bool";
     let (gates_set, wire_set, input_wires, _, _, _, _) = verilog_parser::read_verilog_file(
-        "hdl-benchmarks/processed-netlists/8-bit-adder-lut-3-1.v",
+        "hdl-benchmarks/processed-netlists/8-bit-adder-lut-2-1.v",
         false,
     );
     let input_wire_map = verilog_parser::read_input_wires(
@@ -123,7 +123,7 @@ fn encrypted_eight_bit_adder_lut() {
     let mut ptxt_wire_map = circuit_ptxt.initialize_wire_map(&wire_set, &input_wire_map, datatype);
 
     // Encrypted single bit ctxt
-    let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_3_CARRY_0);
+    let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_2_CARRY_1_KS_PBS);
 
     // Plaintext
     for input_wire in &input_wires {

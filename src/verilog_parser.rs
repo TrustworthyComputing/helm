@@ -17,10 +17,10 @@ fn extract_const_val(input_str: &str) -> &str {
     &input_str[start_index + 1..end_index]
 }
 
-fn usize_to_bitvec(value: usize) -> Vec<u64> {
+fn usize_to_bitvec(value: usize, lut_size: usize) -> Vec<u64> {
     let mut bits: Vec<u64> = Vec::new();
-
-    for i in 0..64 {
+    
+    for i in 0..lut_size {
         let bit = ((value >> i) & 1) as u64;
         bits.push(bit);
     }
@@ -108,8 +108,7 @@ fn parse_gate(tokens: &[&str]) -> Gate {
                 Err(_) => panic!("Failed to parse integer"),
             })
         };
-
-        Some(usize_to_bitvec(lut_const_int.unwrap()))
+        Some(usize_to_bitvec(lut_const_int.unwrap(), 1 << input_wires.len()))
     } else {
         None
     };

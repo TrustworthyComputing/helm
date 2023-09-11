@@ -17,7 +17,7 @@ pub enum PtxtError {
     InvalidInput,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PtxtType {
     Bool(bool),
     U8(u8),
@@ -148,7 +148,19 @@ pub fn get_input_wire_map(
             color::Fg(color::Reset)
         );
 
-        HashMap::new()
+        let mut input_wire_map = HashMap::new();
+        let ptxt = match arithmetic_type {
+            "bool" => PtxtType::Bool(false),
+            "u8" => PtxtType::U8(0),
+            "u16" => PtxtType::U16(0),
+            "u32" => PtxtType::U32(0),
+            "u64" => PtxtType::U64(0),
+            "u128" => PtxtType::U128(0),
+            _ => unreachable!(),
+        };
+        input_wire_map.insert("dummy".to_string(), ptxt);
+
+        input_wire_map
     }
 }
 
