@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use termion::color;
 
 use crate::gates::{Gate, GateType};
-use crate::PtxtType;
+use crate::{parse_input_wire, PtxtType};
 
 fn extract_const_val(input_str: &str) -> &str {
     let start_index = input_str.find('(').expect("Opening parenthesis not found");
@@ -280,38 +280,34 @@ pub fn read_input_wires(file_name: &str, ptxt_type: &str) -> HashMap<String, Ptx
     let mut input_map = HashMap::new();
     for rec in Reader::from_reader(reader).records() {
         let record = rec.unwrap();
-        assert_eq!(record.len(), 2);
+        let wire_name = record[0].trim().to_string();
 
-        let input_wire = record[0].trim().to_string();
-        match ptxt_type {
-            "bool" => {
-                let init_value = match record[1].trim() {
-                    "1" => true,
-                    s => s.parse::<bool>().unwrap_or(false),
-                };
-                input_map.insert(input_wire, PtxtType::Bool(init_value));
+        if record.len() == 2 {
+            let wire_value = parse_input_wire(&record[1].trim().to_string(), ptxt_type);
+            input_map.insert(wire_name, wire_value);
+        } else if record.len() == 3 && ptxt_type == "bool" {
+            let wire_width = record[2].trim().parse::<usize>().unwrap();
+            if wire_width > 1 {
+                let bit_string = hex_to_bitstring(record[1].trim())
+                    .chars()
+                    .rev()
+                    .collect::<Vec<_>>();
+                for idx in 0..wire_width {
+                    let key = wire_name.clone() + "[" + idx.to_string().as_str() + "]";
+                    if idx < bit_string.len() {
+                        input_map.insert(key, PtxtType::Bool(bit_string[idx] == '1'));
+                    } else {
+                        // pad with 0
+                        input_map.insert(key, PtxtType::Bool(false));
+                    }
+                }
+            } else {
+                // if it's a bit.
+                let wire_value = parse_input_wire(&record[1].trim().to_string(), ptxt_type);
+                input_map.insert(wire_name, wire_value);
             }
-            "u8" => {
-                let init_value = record[1].trim().to_string().parse::<u8>().unwrap();
-                input_map.insert(input_wire, PtxtType::U8(init_value));
-            }
-            "u16" => {
-                let init_value = record[1].trim().to_string().parse::<u16>().unwrap();
-                input_map.insert(input_wire, PtxtType::U16(init_value));
-            }
-            "u32" => {
-                let init_value = record[1].trim().to_string().parse::<u32>().unwrap();
-                input_map.insert(input_wire, PtxtType::U32(init_value));
-            }
-            "u64" => {
-                let init_value = record[1].trim().to_string().parse::<u64>().unwrap();
-                input_map.insert(input_wire, PtxtType::U64(init_value));
-            }
-            "u128" => {
-                let init_value = record[1].trim().to_string().parse::<u128>().unwrap();
-                input_map.insert(input_wire, PtxtType::U128(init_value));
-            }
-            _ => unreachable!(),
+        } else {
+            panic!("The CSV should contain either two or three columns");
         }
     }
 
@@ -348,4 +344,19 @@ pub fn write_output_wires(file_name: Option<String>, input_map: &HashMap<String,
         }
         println!("Decrypted outputs written to {}", file_name);
     }
+}
+
+fn hex_to_bitstring(hex_string: &str) -> String {
+    let mut bit_string = String::new();
+    for hex_char in hex_string.chars() {
+        match hex_char.to_digit(16) {
+            Some(hex_digit) => {
+                let binary_digit = format!("{:04b}", hex_digit);
+                bit_string.push_str(&binary_digit);
+            }
+            None => unreachable!(),
+        }
+    }
+
+    bit_string
 }

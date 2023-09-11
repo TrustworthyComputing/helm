@@ -87,6 +87,24 @@ impl FheType {
     }
 }
 
+pub fn parse_input_wire(wire: &String, ptxt_type: &str) -> PtxtType {
+    match ptxt_type {
+        "bool" => {
+            let init_value = match wire.trim() {
+                "1" => true,
+                s => s.parse::<bool>().unwrap_or(false),
+            };
+            PtxtType::Bool(init_value)
+        }
+        "u8" => PtxtType::U8(wire.parse::<u8>().unwrap()),
+        "u16" => PtxtType::U16(wire.parse::<u16>().unwrap()),
+        "u32" => PtxtType::U32(wire.parse::<u32>().unwrap()),
+        "u64" => PtxtType::U64(wire.parse::<u64>().unwrap()),
+        "u128" => PtxtType::U128(wire.parse::<u128>().unwrap()),
+        _ => unreachable!(),
+    }
+}
+
 // TODO
 // arithmetic -i a 15
 // boolean: 1) -i a[0] 1 -i a[1] 0 ...
@@ -116,21 +134,11 @@ pub fn get_input_wire_map(
         wire_inputs
             .iter()
             .map(|parts| {
-                let ptxt = match arithmetic_type {
-                    "bool" => PtxtType::Bool(match parts[1].as_str() {
-                        "1" => true,
-                        s => s.parse::<bool>().unwrap_or(false),
-                    }),
-                    "u8" => PtxtType::U8(parts[1].parse().unwrap()),
-                    "u16" => PtxtType::U16(parts[1].parse().unwrap()),
-                    "u32" => PtxtType::U32(parts[1].parse().unwrap()),
-                    "u64" => PtxtType::U64(parts[1].parse().unwrap()),
-                    "u128" => PtxtType::U128(parts[1].parse().unwrap()),
-                    _ => unreachable!(),
-                };
-                println!("parts {:?} -> {:?}", parts, ptxt);
+                let wire_value = parse_input_wire(parts[1], arithmetic_type);
 
-                (parts[0].to_string(), ptxt) // (wirename, value)
+                // TODO: check if the parts.len() == 3, then it also has a wire_width variable.
+
+                (parts[0].to_string(), wire_value) // (wire_name, wire_value)
             })
             .collect::<HashMap<_, _>>()
     } else {
