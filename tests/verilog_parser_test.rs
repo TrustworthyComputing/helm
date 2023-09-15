@@ -117,7 +117,25 @@ fn integer_input_wires() {
     assert_eq!(wire_map["N2"], PtxtType::U128(9));
 }
 
-// TODO:
 /// Test get_input_wire_map with int for bits (AES example).
 #[test]
-fn bool_input_wires_array_as_int() {}
+fn bool_input_wires_array_as_int() {
+    let wire_map = read_input_wires("./hdl-benchmarks/test-cases/bool_array.input.csv", "bool");
+
+    assert_eq!(wire_map["in1[0]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in1[1]"], PtxtType::Bool(false));
+    assert_eq!(wire_map["in1[2]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in1[3]"], PtxtType::Bool(true));
+
+    assert_eq!(wire_map["in2[0]"], PtxtType::Bool(false));
+    assert_eq!(wire_map["in2[1]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in2[2]"], PtxtType::Bool(false));
+    assert_eq!(wire_map["in2[3]"], PtxtType::Bool(true));
+
+    assert_eq!(wire_map["in3[0]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in3[1]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in3[2]"], PtxtType::Bool(false));
+    assert_eq!(wire_map["in3[3]"], PtxtType::Bool(true));
+    assert_eq!(wire_map["in3[4]"], PtxtType::Bool(false));
+    assert_eq!(wire_map["in3[5]"], PtxtType::Bool(false));
+}

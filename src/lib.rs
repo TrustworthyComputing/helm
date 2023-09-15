@@ -87,6 +87,24 @@ impl FheType {
     }
 }
 
+pub fn parse_input_wire(wire: &str, ptxt_type: &str) -> PtxtType {
+    match ptxt_type {
+        "bool" => {
+            let init_value = match wire.trim() {
+                "1" => true,
+                s => s.parse::<bool>().unwrap_or(false),
+            };
+            PtxtType::Bool(init_value)
+        }
+        "u8" => PtxtType::U8(wire.parse::<u8>().unwrap()),
+        "u16" => PtxtType::U16(wire.parse::<u16>().unwrap()),
+        "u32" => PtxtType::U32(wire.parse::<u32>().unwrap()),
+        "u64" => PtxtType::U64(wire.parse::<u64>().unwrap()),
+        "u128" => PtxtType::U128(wire.parse::<u128>().unwrap()),
+        _ => unreachable!(),
+    }
+}
+
 // TODO
 // arithmetic -i a 15
 // boolean: 1) -i a[0] 1 -i a[1] 0 ...
@@ -97,6 +115,8 @@ pub fn get_input_wire_map(
     wire_inputs: Vec<Vec<&String>>,
     arithmetic_type: &str,
 ) -> HashMap<String, PtxtType> {
+    dbg!("input_wires: {:?}", &wire_inputs);
+
     if let Some(wire_file_name) = &inputs_filename {
         println!(
             "{}[✓]{} Input wires were provided.",
@@ -115,24 +135,39 @@ pub fn get_input_wire_map(
         // [[wire1, value1], [wire2, value2], [wire3, value3]]
         wire_inputs
             .iter()
-            .map(|parts| {
-                let ptxt = match arithmetic_type {
-                    "bool" => PtxtType::Bool(match parts[1].as_str() {
-                        "1" => true,
-                        s => s.parse::<bool>().unwrap_or(false),
-                    }),
-                    "u8" => PtxtType::U8(parts[1].parse().unwrap()),
-                    "u16" => PtxtType::U16(parts[1].parse().unwrap()),
-                    "u32" => PtxtType::U32(parts[1].parse().unwrap()),
-                    "u64" => PtxtType::U64(parts[1].parse().unwrap()),
-                    "u128" => PtxtType::U128(parts[1].parse().unwrap()),
-                    _ => unreachable!(),
-                };
-                println!("parts {:?} -> {:?}", parts, ptxt);
+            .flat_map(|parts| {
+                let wire_name = parts[0].to_string();
+                if parts.len() == 2 {
+                    let wire_value = parse_input_wire(parts[1], arithmetic_type);
+                    println!("(wire_name, wire_value): {:?} {:?}", wire_name, wire_value);
 
-                (parts[0].to_string(), ptxt) // (wirename, value)
+                    vec![(wire_name, wire_value)]
+                } else if parts.len() == 3 && arithmetic_type == "bool" {
+                    let wire_width = parts[2].trim().parse::<usize>().unwrap();
+
+                    let bit_string = hex_to_bitstring(parts[1].trim())
+                        .chars()
+                        .rev()
+                        .collect::<Vec<_>>();
+                    let mut pairs = vec![];
+
+                    for idx in 0..wire_width {
+                        let key = format!("{}[{}]", wire_name, idx);
+                        let value = if idx < bit_string.len() {
+                            PtxtType::Bool(bit_string[idx] == '1')
+                        } else {
+                            PtxtType::Bool(false)
+                        };
+                        println!("(wire_name, wire_value): {:?} {:?}", key, value);
+
+                        pairs.push((key, value));
+                    }
+                    pairs
+                } else {
+                    panic!("-w input should contain either two or three values");
+                }
             })
-            .collect::<HashMap<_, _>>()
+            .collect::<HashMap<String, PtxtType>>()
     } else {
         println!(
             "{}[!]{} No input wires specified, they will be initialized to false.",
@@ -141,19 +176,26 @@ pub fn get_input_wire_map(
         );
 
         let mut input_wire_map = HashMap::new();
-        let ptxt = match arithmetic_type {
-            "bool" => PtxtType::Bool(false),
-            "u8" => PtxtType::U8(0),
-            "u16" => PtxtType::U16(0),
-            "u32" => PtxtType::U32(0),
-            "u64" => PtxtType::U64(0),
-            "u128" => PtxtType::U128(0),
-            _ => unreachable!(),
-        };
-        input_wire_map.insert("dummy".to_string(), ptxt);
+        let wire_value = parse_input_wire("0", arithmetic_type);
+        input_wire_map.insert("dummy".to_string(), wire_value);
 
         input_wire_map
     }
+}
+
+pub fn hex_to_bitstring(hex_string: &str) -> String {
+    let mut bit_string = String::new();
+    for hex_char in hex_string.chars() {
+        match hex_char.to_digit(16) {
+            Some(hex_digit) => {
+                let binary_digit = format!("{:04b}", hex_digit);
+                bit_string.push_str(&binary_digit);
+            }
+            None => unreachable!(),
+        }
+    }
+
+    bit_string
 }
 
 pub fn parse_args() -> ArgMatches {
@@ -171,12 +213,11 @@ pub fn parse_args() -> ArgMatches {
             Arg::new("input-wires")
                 .long("input-wires")
                 .short('w')
-                .num_args(2)
+                .num_args(2..=3)
                 .action(ArgAction::Append)
                 .value_parser(value_parser!(String))
-                .value_names(["STRING", "HEX"])
-                .help("Input wire values (-i wire1 hex1 -i wire2 hex2 ...)")
-                .value_delimiter(',')
+                .value_names(["STRING", "STRING", "[NUM]"])
+                .help("Input wire values (-w wire1 value1 [width1] -w wire2 value2 [width2]...)")
                 .conflicts_with("input-wires-file")
                 .required(false),
         )
