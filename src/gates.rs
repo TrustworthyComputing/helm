@@ -287,7 +287,7 @@ impl Gate {
             }
         }
 
-        let ret = lut(server_key, self.lut_const.as_ref().unwrap(), input_values);
+        let ret = lut(server_key, self.lut_const.as_ref().unwrap(), input_values, self.get_gate_name());
         self.encrypted_lut_output = Some(ret.clone());
 
         ret
@@ -746,18 +746,22 @@ pub fn lut(
     sks: &ServerKeyShortInt,
     lut_const: &Vec<u64>,
     ctxts: &mut Vec<CiphertextBase>,
+    gate_id: String,
 ) -> CiphertextBase {
     // Σ ctxts[i] * 2^i
-    println!("lut constant: {:?}", &lut_const);
     if ctxts.len() == 2 {
         let mut c0 = ctxts[0].clone();
         let wrapped_f = |lhs: u64, rhs: u64| -> u64 { u64::from(eval_luts_bivariate_test(lhs as u64, rhs as u64, lut_const)) };
         sks.smart_evaluate_bivariate_function(&mut c0, &mut ctxts[1], wrapped_f)
     } else if ctxts.len() == 1 {
-        println!("lut_const: {:?}", &lut_const);
-        ctxts[0].clone()
+        if lut_const.iter().all(|&x| x == 0) {
+            ctxts[0].clone()
+        }
+        else {
+            sks.smart_neg(&mut ctxts[0])
+        }
     } else {
-        println!("shouldn't get here!");
+        println!("gate id: {:?}", &gate_id);
         let ctxts_len: u8 = (ctxts.len() - 1) as u8;
         let ct_sum = ctxts
             .iter_mut()

@@ -1,0 +1,151 @@
+# HELM Experiments
+
+## 1. Multipliers
+1. **16-bit**
+   1. **Gates**
+     ```shell
+      cargo run --bin preprocessor --release  \
+          --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+          --input ./hdl-benchmarks/netlists/16-bit-mult-gates.v \
+          --output ./hdl-benchmarks/processed-netlists/16-bit-mult-gates.v
+      cargo run --bin helm --release -- \
+          --verilog ./hdl-benchmarks/processed-netlists/16-bit-mult-gates.v \
+          --input-wires-file ./hdl-benchmarks/test-cases/16-bit-mult.inputs.csv
+     ```
+   2. **LUT w/ LBB**
+     ```shell
+      cargo run --bin preprocessor --release  \
+          --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+          --input ./hdl-benchmarks/netlists/16-bit-mult-lut-2-1.v \
+          --output ./hdl-benchmarks/processed-netlists/16-bit-mult-lut-2-1.v
+      cargo run --bin helm --release -- \
+          --verilog ./hdl-benchmarks/processed-netlists/16-bit-mult-lut-2-1.v \
+          --input-wires-file ./hdl-benchmarks/test-cases/16-bit-mult.inputs.csv
+     ```
+   3. **LUT w/o LBB**
+     ```shell
+      cargo run --bin preprocessor --release  \
+          --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+          --input ./hdl-benchmarks/designs/16-bit-mult.v \
+          --output ./hdl-benchmarks/processed-netlists/16-bit-mult-arith.v \
+          --arithmetic 
+      cargo run --bin helm --release -- --arithmetic u16 \
+          --verilog ./hdl-benchmarks/processed-netlists/16-bit-mult-arith.v \
+          -w G11 99 16 -w G12 4 16
+     ```
+2. Support for 32-bit, 64-bit, 128-bit.
+
+
+## 2. Matrix Multiplication
+1. 5x5 x 5x5
+   1. **Gates**
+     ```shell
+      cargo run --bin preprocessor --release  \
+          --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+          --input ./hdl-benchmarks/netlists/5x5_x_5x5_mmult_gates.v \
+          --output ./hdl-benchmarks/processed-netlists/5x5_x_5x5_mmult_gates.v
+      cargo run --bin helm --release -- \
+          --verilog ./hdl-benchmarks/processed-netlists/5x5_x_5x5_mmult_gates.v
+     ```
+   2. **LUT w/ LBB**
+     ```shell
+      cargo run --bin preprocessor --release  \
+          --manifest-path=./hdl-benchmarks/Cargo.toml --  \
+          --input ./hdl-benchmarks/netlists/5x5_x_5x5_mmult-lut-2-1.v \
+          --output ./hdl-benchmarks/processed-netlists/5x5_x_5x5_mmult-lut-2-1.v
+      cargo run --bin helm --release -- \
+          --verilog ./hdl-benchmarks/processed-netlists/5x5_x_5x5_mmult-lut-2-1.v
+     ```
+   3. **LUT w/o LBB**
+     ```shell
+
+     ```
+2. Support for 10x10 x 10x10 and 15x15 x 15x15.
+
+
+## 3. Chi squared
+1. **Gates**
+  ```shell
+
+  ```
+2. **LUT w/ LBB**
+  ```shell
+
+  ```
+3. **LUT w/o LBB**
+  ```shell
+
+  ```
+
+## 4. Euclidean Distance
+1. `N = 32`
+```shell
+
+```
+2. Support for `N = 64`.
+
+
+## 5. CRC-32
+1. **Gates**
+  ```shell
+
+  ```
+2. **LUT w/ LBB**
+  ```shell
+
+  ```
+
+## 6. AES
+1. AES Core
+   1. **Gates**
+    ```shell
+
+    ```
+   2. **LUT w/ LBB**
+    ```shell
+
+    ```
+2. Support for AES-128 with Key Scheduling and AES-128 without Key Scheduling.
+
+
+## 7. Box Blur and Gaussian Blur
+1. Box Blur
+   1. **Gates**
+    ```shell
+
+    ```
+   2. **LUT w/ LBB**
+    ```shell
+
+    ```
+   3. **LUT w/o LBB**
+    ```shell
+
+    ```
+2. Support for Gaussian Blur.
+
+
+## 9. ISCAS'85
+1.  c1355
+    1.  **Gates**
+    ```shell
+
+    ```
+    2. **LUT w/ LBB**
+    ```shell
+
+    ```
+2. Support for c1908, c2670, c3540, c5315, c6288, c7552.
+
+
+## 10. ISCAS'89
+1.  s386,
+    1.  **Gates**
+    ```shell
+
+    ```
+    2.  **LUT w/ LBB**
+    ```shell
+
+    ```
+2. Support for s510, s1196, s5378, s9234, s13207, s15850.
