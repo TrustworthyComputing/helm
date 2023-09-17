@@ -65,7 +65,7 @@
         --arithmetic
      cargo run --bin helm --release -- \
         --arithmetic u16 \
-        --verilog ./hdl-benchmarks/processed-netlists/5x5_x_5x5_mmult-lut-2-1.v
+        --verilog ./hdl-benchmarks/processed-netlists/5x5_x_5x5-mmult-arith.v
      ```
 2. Support for 10x10 x 10x10 and 15x15 x 15x15.
 
