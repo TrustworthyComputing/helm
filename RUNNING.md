@@ -31,7 +31,7 @@
         --arithmetic
      cargo run --bin helm --release -- --arithmetic u16 \
         --verilog ./hdl-benchmarks/processed-netlists/16-bit-mult-arith.v \
-        -w G11 99 16 -w G12 4 16
+        -w G11 99 -w G12 4
      ```
 2. Support for 32-bit, 64-bit, 128-bit.
 
