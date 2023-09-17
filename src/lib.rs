@@ -115,8 +115,6 @@ pub fn get_input_wire_map(
     wire_inputs: Vec<Vec<&String>>,
     arithmetic_type: &str,
 ) -> HashMap<String, PtxtType> {
-    dbg!("input_wires: {:?}", &wire_inputs);
-
     if let Some(wire_file_name) = &inputs_filename {
         println!(
             "{}[✓]{} Input wires were provided.",
@@ -139,8 +137,6 @@ pub fn get_input_wire_map(
                 let wire_name = parts[0].to_string();
                 if parts.len() == 2 {
                     let wire_value = parse_input_wire(parts[1], arithmetic_type);
-                    println!("(wire_name, wire_value): {:?} {:?}", wire_name, wire_value);
-
                     vec![(wire_name, wire_value)]
                 } else if parts.len() == 3 && arithmetic_type == "bool" {
                     let wire_width = parts[2].trim().parse::<usize>().unwrap();
@@ -158,7 +154,6 @@ pub fn get_input_wire_map(
                         } else {
                             PtxtType::Bool(false)
                         };
-                        println!("(wire_name, wire_value): {:?} {:?}", key, value);
 
                         pairs.push((key, value));
                     }
