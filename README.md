@@ -11,6 +11,22 @@ high-precision arithmetic operations.
 In all cases, both sequential and combinational circuits are supported with the
 exception of arithmetic circuits (which only support combinational logic).
 
+
+### How to cite this work
+The preprint can be accessed [here](https://eprint.iacr.org/2023/1382); you can cite this work as follows:
+```
+@Misc{EPRINT:GouMouTso23helm,
+    author       = "Charles Gouert and
+                    Dimitris Mouris and
+                    Nektarios Georgios Tsoutsos",
+    title        = "{HELM: Navigating Homomorphic Encryption through Gates and Lookup Tables}",
+    year         = 2023,
+    howpublished = "Cryptology ePrint Archive, Paper 2023/1382",
+    note         = "\url{https://eprint.iacr.org/2023/1382}",
+}
+```
+
+
 ## Build & Run
 
 ### 1) Clone, build, and run the tests:
