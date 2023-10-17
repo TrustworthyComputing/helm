@@ -701,11 +701,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             // if no inputs are provided, initialize it to false
             if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
                 let encrypted_value = match ptxt_type {
-                    "u8" => FheType::U8(FheUint8::try_encrypt(0, &self.client_key).unwrap()),
-                    "u16" => FheType::U16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
-                    "u32" => FheType::U32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
-                    "u64" => FheType::U64(FheUint64::try_encrypt(0, &self.client_key).unwrap()),
-                    "u128" => FheType::U128(FheUint128::try_encrypt(0, &self.client_key).unwrap()),
+                    "u8" => FheType::U8(FheUint8::try_encrypt(0u8, &self.client_key).unwrap()),
+                    "u16" => FheType::U16(FheUint16::try_encrypt(0u16, &self.client_key).unwrap()),
+                    "u32" => FheType::U32(FheUint32::try_encrypt(0u32, &self.client_key).unwrap()),
+                    "u64" => FheType::U64(FheUint64::try_encrypt(0u64, &self.client_key).unwrap()),
+                    "u128" => FheType::U128(FheUint128::try_encrypt(0u128, &self.client_key).unwrap()),
                     _ => unreachable!(),
                 };
 
@@ -737,11 +737,11 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         }
         for wire in self.circuit.dff_outputs {
             let encrypted_value = match ptxt_type {
-                "u8" => FheType::U8(FheUint8::try_encrypt(0, &self.client_key).unwrap()),
-                "u16" => FheType::U16(FheUint16::try_encrypt(0, &self.client_key).unwrap()),
-                "u32" => FheType::U32(FheUint32::try_encrypt(0, &self.client_key).unwrap()),
-                "u64" => FheType::U64(FheUint64::try_encrypt(0, &self.client_key).unwrap()),
-                "u128" => FheType::U128(FheUint128::try_encrypt(0, &self.client_key).unwrap()),
+                "u8" => FheType::U8(FheUint8::try_encrypt(0u8, &self.client_key).unwrap()),
+                "u16" => FheType::U16(FheUint16::try_encrypt(0u16, &self.client_key).unwrap()),
+                "u32" => FheType::U32(FheUint32::try_encrypt(0u32, &self.client_key).unwrap()),
+                "u64" => FheType::U64(FheUint64::try_encrypt(0u64, &self.client_key).unwrap()),
+                "u128" => FheType::U128(FheUint128::try_encrypt(0u128, &self.client_key).unwrap()),
                 _ => unreachable!(),
             };
             enc_wire_map.insert(wire.to_string(), encrypted_value);
