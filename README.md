@@ -2,6 +2,9 @@
 
 <h2 align="center">Navigating Homomorphic Evaluation through Gates and Lookups</h2>
 
+<p align="center">
+    <img src="./logos/helm.png" height="10%" width="10%">
+</p>
 
 ## Overview
 HELM is a framework for evaluating synthesizable HDL designs in the encrypted
