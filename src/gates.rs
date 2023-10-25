@@ -17,10 +17,10 @@ use tfhe::{
         ServerKey as ServerKeyShortInt,
     },
 };
-
+use std::time::Instant;
 use crate::{FheType, PtxtType};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GateType {
     And,       // and  ID(in0, in1, out);
     Dff,       // dff  ID(in, out);
@@ -138,6 +138,10 @@ impl Gate {
 
     pub fn get_gate_name(&self) -> String {
         self.gate_name.clone()
+    }
+
+    pub fn get_lut_const(&self) -> Option<Vec<u64>> {
+        self.lut_const.clone()
     }
 
     pub fn set_level(&mut self, level: usize) {
@@ -286,7 +290,7 @@ impl Gate {
                 return encrypted_lut_output;
             }
         }
-
+        let start_time = Instant::now();
         let ret = lut(
             server_key,
             self.lut_const.as_ref().unwrap(),
@@ -294,7 +298,8 @@ impl Gate {
             self.get_gate_name(),
         );
         self.encrypted_lut_output = Some(ret.clone());
-
+        let elapsed_time = Instant::now() - start_time;
+        println!("PBS time: {} us", elapsed_time.as_micros());    
         ret
     }
 

@@ -21,8 +21,17 @@ use tfhe::{
     },
     unset_server_key, FheUint128, FheUint16, FheUint32, FheUint64, FheUint8,
 };
+use concrete_core::prelude::*;
+use concrete_core::specification::parameters::{LweDimension, PolynomialSize, GlweDimension};
+
 
 use crate::{FheType, PtxtType};
+
+/// The plaintext associated with true: 1/8 (for concrete-core Boolean)
+static PLAINTEXT_TRUE: u32 = 1 << (32 - 3);
+
+/// The plaintext associated with false: -1/8 (for concrete-core Boolean)
+static PLAINTEXT_FALSE: u32 = 7 << (32 - 3);
 
 pub trait EvalCircuit<C> {
     fn encrypt_inputs(
@@ -39,7 +48,7 @@ pub trait EvalCircuit<C> {
     ) -> HashMap<String, C>;
 
     fn decrypt_outputs(
-        &self,
+        &mut self,
         enc_wire_map: &HashMap<String, C>,
         verbose: bool,
     ) -> HashMap<String, PtxtType>;
@@ -64,6 +73,32 @@ pub struct LutCircuit<'a> {
     circuit: Circuit<'a>,
     client_key: ClientKeyShortInt,
     server_key: ServerKeyShortInt,
+}
+
+pub struct CircuitCuda<'a> {
+    circuit: Circuit<'a>,
+    default_engine: DefaultEngine,
+    cuda_engine: CudaEngine,
+    host_client_key: LweSecretKey32,
+    device_bootstrap_key: CudaFourierLweBootstrapKey32,
+    device_keyswitch_key: CudaLweKeyswitchKey32,
+    lwe_dim_orig: LweDimension,
+    noise: Variance,
+}
+
+pub struct LutCircuitCuda<'a> {
+    circuit: Circuit<'a>,
+    default_engine: DefaultEngine,
+    cuda_engine: CudaEngine,
+    cuda_amortized_engine: AmortizedCudaEngine,
+    host_client_key: LweSecretKey64,
+    host_client_key_intermediate: LweSecretKey64,
+    device_bootstrap_key: CudaFourierLweBootstrapKey64,
+    device_keyswitch_key: CudaLweKeyswitchKey64,
+    lwe_dim_orig: LweDimension,
+    glwe_dim: GlweDimension,
+    noise: Variance,
+    poly_degree: PolynomialSize,
 }
 
 pub struct ArithCircuit<'a> {
@@ -389,6 +424,62 @@ impl<'a> LutCircuit<'a> {
     }
 }
 
+impl<'a> CircuitCuda<'a> {
+    pub fn new(
+        circuit: Circuit,
+        default_engine: DefaultEngine,
+        cuda_engine: CudaEngine,
+        host_client_key: LweSecretKey32,
+        device_bootstrap_key: CudaFourierLweBootstrapKey32,
+        device_keyswitch_key: CudaLweKeyswitchKey32,
+        lwe_dim_orig: LweDimension,
+        noise: Variance,
+    ) -> CircuitCuda {
+        CircuitCuda {
+            circuit,
+            default_engine,
+            cuda_engine,
+            host_client_key,
+            device_bootstrap_key,
+            device_keyswitch_key,
+            lwe_dim_orig,
+            noise,
+        }
+    }
+}
+
+impl<'a> LutCircuitCuda<'a> {
+    pub fn new(
+        circuit: Circuit,
+        default_engine: DefaultEngine,
+        cuda_engine: CudaEngine,
+        cuda_amortized_engine: AmortizedCudaEngine,
+        host_client_key: LweSecretKey64,
+        host_client_key_intermediate: LweSecretKey64,
+        device_bootstrap_key: CudaFourierLweBootstrapKey64,
+        device_keyswitch_key: CudaLweKeyswitchKey64,
+        lwe_dim_orig: LweDimension,
+        glwe_dim: GlweDimension,
+        noise: Variance,
+        poly_degree: PolynomialSize,
+    ) -> LutCircuitCuda {
+        LutCircuitCuda {
+            circuit,
+            default_engine,
+            cuda_engine,
+            cuda_amortized_engine,
+            host_client_key,
+            host_client_key_intermediate,
+            device_bootstrap_key,
+            device_keyswitch_key,
+            lwe_dim_orig,
+            glwe_dim,
+            noise,
+            poly_degree,
+        }
+    }
+}
+
 impl<'a> ArithCircuit<'a> {
     pub fn new(
         client_key: tfhe::ClientKey,
@@ -500,7 +591,7 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
     }
 
     fn decrypt_outputs(
-        &self,
+        &mut self,
         enc_wire_map: &HashMap<String, CtxtBool>,
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
@@ -508,6 +599,576 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
         for output_wire in self.circuit.output_wires {
             let decrypted_value = self.client_key.decrypt(&enc_wire_map[output_wire]);
             decrypted_outputs.insert(output_wire.clone(), PtxtType::Bool(decrypted_value));
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
+            if i > 10 && !verbose {
+                println!(
+                    "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
+                    color::Fg(color::LightYellow),
+                    color::Fg(color::Reset)
+                );
+                break;
+            } else {
+                println!(" {}: {}", wire, val);
+            }
+        }
+
+        decrypted_outputs
+    }
+}
+
+impl<'a> EvalCircuit<LweCiphertext64> for LutCircuitCuda<'a> {
+    fn encrypt_inputs(
+        &mut self,
+        wire_set: &HashSet<String>,
+        input_wire_map: &HashMap<String, PtxtType>,
+    ) -> HashMap<String, LweCiphertext64> {
+        let zero_ptxt: Plaintext64 = self.default_engine.create_plaintext_from(&0).unwrap();
+
+        let mut enc_wire_map = wire_set
+            .iter()
+            .map(|wire| (wire.to_string(), self.default_engine.trivially_encrypt_lwe_ciphertext(self.lwe_dim_orig.to_lwe_size(), &zero_ptxt).unwrap()))
+            .collect::<HashMap<_, _>>();
+        for input_wire in self.circuit.input_wires {
+            // if no inputs are provided, initialize it to false
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
+                enc_wire_map.insert(input_wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &zero_ptxt, self.noise).unwrap());
+            } else if !input_wire_map.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                match input_wire_map[input_wire] {        
+                    PtxtType::Bool(v) => {
+                        let shifted_input = (v as u64) << 60;
+                        let input_pt: Plaintext64 = self.default_engine.create_plaintext_from(&shifted_input).unwrap();
+                        enc_wire_map
+                            .insert(input_wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &input_pt, self.noise).unwrap());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        for wire in self.circuit.dff_outputs {
+            enc_wire_map
+                .insert(wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &zero_ptxt, self.noise).unwrap());
+        }
+
+        enc_wire_map
+    }
+
+    fn evaluate_encrypted(
+        &mut self,
+        enc_wire_map: &HashMap<String, LweCiphertext64>,
+        _cycle: usize,
+        _ptxt_type: &str,
+    ) -> HashMap<String, LweCiphertext64> {
+        // Make sure the sort circuit function has run.
+        assert!(self.circuit.gates.is_empty());
+        // Make sure the compute_levels function has run.
+        assert!(self.circuit.ordered_gates.is_empty());
+
+        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+            .iter()
+            .enumerate()
+            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
+            .unzip();
+
+        let h_bridge_cleartext: Cleartext64 = self.default_engine.create_cleartext_from(&2).unwrap();
+
+        // For each level
+        let total_levels = self.circuit.level_map.len();
+        for (level, gates) in self
+            .circuit
+            .level_map
+            .iter_mut()
+            .sorted_by_key(|(level, _)| *level)
+        {
+            let mut input_vec: LweCiphertextVector64 = self.default_engine
+            .zero_encrypt_lwe_ciphertext_vector(&self.host_client_key, self.noise, LweCiphertextCount(gates.len()))
+            .unwrap();
+            let num_gates = gates.len();
+
+            // bridge the ctxts and store in input_vec
+            let mut array_idx = 0;
+            for gate in gates.iter() {
+                let input_values: Vec<LweCiphertext64> = gate
+                    .get_input_wires()
+                    .iter()
+                    .map(|input| {
+                        // Get the corresponding index in the wires array
+                        let index = match key_to_index.get(input) {
+                            Some(&index) => index,
+                            None => panic!("Input wire {} not in key_to_index map", input),
+                        };
+
+                        // Read the value of the corresponding key
+                        eval_values[index].read().unwrap().clone()
+                    })
+                    .collect();
+                if gate.get_input_wires().len() == 2 {
+                    let mut tmp_ct = input_values[1].clone();
+                    self.default_engine.fuse_mul_lwe_ciphertext_cleartext(&mut tmp_ct, &h_bridge_cleartext).unwrap();
+                    self.default_engine
+                    .fuse_add_lwe_ciphertext(&mut tmp_ct, &input_values[0])
+                    .unwrap();
+                    let err_chk = self.default_engine.discard_store_lwe_ciphertext(
+                        &mut input_vec,
+                        &tmp_ct,
+                        LweCiphertextIndex(array_idx as usize),
+                    );
+                    match err_chk {
+                        Ok(_value) => {}
+                        Err(error) => {
+                            println!("Error @ index={:?}: {}", &array_idx, error);
+                        }
+                    }
+                } else if gate.get_input_wires().len() == 1 {
+                    let err_chk = self.default_engine.discard_store_lwe_ciphertext(
+                        &mut input_vec,
+                        &input_values[0],
+                        LweCiphertextIndex(array_idx as usize),
+                    );
+                    match err_chk {
+                        Ok(_value) => {}
+                        Err(error) => {
+                            println!("Error @ index={:?}: {}", &array_idx, error);
+                        }
+                    }
+                } else {
+                    panic!("Only 2:1 and 1:1 LUTs are supported on the GPU!");
+                }
+                array_idx += 1;
+            }
+
+            // Upload input_vec to GPU
+            let mut d_input_vec: CudaLweCiphertextVector64 = self.cuda_engine
+            .convert_lwe_ciphertext_vector(&input_vec)
+            .unwrap();    
+
+            // Build LUT constants
+            let mut lut = vec![0u64; self.poly_degree.0 * num_gates];
+            
+            for j in 0..num_gates {
+                for i in 0..self.poly_degree.0 {
+                    if i < 16 { // map 0 to lut_const[0]
+                        let l = ((64 * gates[j].get_lut_const().as_ref().unwrap()[0]) as f64 * 2_f64.powi((54) as i32)) as u64;
+                        lut[j * self.poly_degree.0 + i] = l;
+                    } else if i < 80 { // map 1 to lut_const[1]
+                        let l = ((64 * gates[j].get_lut_const().as_ref().unwrap()[1]) as f64 * 2_f64.powi((54) as i32)) as u64;
+                        lut[j * self.poly_degree.0 + i] = l;
+                    } else if i < 144 { // map 2 to lut_const[2]
+                        let l = ((64 * gates[j].get_lut_const().as_ref().unwrap()[2]) as f64 * 2_f64.powi((54) as i32)) as u64;
+                        lut[j * self.poly_degree.0 + i] = l;
+                    } else if i < 208 { // map 3 to lut_const[3]
+                        let l = ((64 * gates[j].get_lut_const().as_ref().unwrap()[3]) as f64 * 2_f64.powi((54) as i32)) as u64;
+                        lut[j * self.poly_degree.0 + i] = l;
+                    } else { // map 0 to lut_const[0]; offset needed for some reason
+                        let offset = if gates[j].get_lut_const().as_ref().unwrap()[0] > 0 { 896 } else { 0 };
+                        let l = ((gates[j].get_lut_const().as_ref().unwrap()[0]*64+offset) as f64 * 2_f64.powi((54) as i32)) as u64;
+                        lut[j * self.poly_degree.0 + i] = l;
+                    }
+                }
+
+                // let mut small_lut = vec![0u64; 32];
+
+                // // Encode entries with redundancy
+                // let mut idx = 31;
+                // for i in 0..gates[j].get_lut_const().as_ref().unwrap().len() {
+                //     small_lut[idx] = gates[j].get_lut_const().as_ref().unwrap()[i];
+                //     idx = (idx + 1) % 32;
+                //     small_lut[idx] = gates[j].get_lut_const().as_ref().unwrap()[i];
+                //     idx = (idx + 1) % 32;
+                // }
+
+                // println!("lut const: {:?}", gates[j].get_lut_const().as_ref().unwrap());
+                // println!("small_lut: {:?}", &small_lut);
+
+                // for i in 0..self.poly_degree.0 {
+                //     let l = small_lut[i >> 4] << 59;
+                //     lut[j * self.poly_degree.0 + i] = l;
+                // }
+            }
+            
+            // Encode LUT constants as a GLWE ctxt vector
+            let host_lut_plaintext_vector = self.default_engine.create_plaintext_vector_from(&lut).unwrap();
+            let host_lut = self.default_engine
+            .trivially_encrypt_glwe_ciphertext_vector(
+                self.glwe_dim.to_glwe_size(),
+                GlweCiphertextCount(gates.len()),
+                &host_lut_plaintext_vector,
+            )
+            .unwrap();
+    
+            // Upload GLWE ctxt vector to GPU
+            let d_lut: CudaGlweCiphertextVector64 =
+            self.cuda_engine.convert_glwe_ciphertext_vector(&host_lut).unwrap();
+
+            // Allocate output ciphertext array for bootstrapping
+            let h_zero_output_ciphertext_vector: LweCiphertextVector64 = self.default_engine
+            .zero_encrypt_lwe_ciphertext_vector(&self.host_client_key_intermediate, self.noise, LweCiphertextCount(gates.len()))
+            .unwrap();
+            
+            // Upload output ciphertext array to GPU
+            let mut d_output_ciphertext_vector: CudaLweCiphertextVector64 = self.cuda_engine
+                .convert_lwe_ciphertext_vector(&h_zero_output_ciphertext_vector)
+                .unwrap();
+    
+            // Compute all LUTs in the level on the GPU
+            self.cuda_amortized_engine
+            .discard_bootstrap_lwe_ciphertext_vector(
+                &mut d_output_ciphertext_vector,
+                &d_input_vec,
+                &d_lut,
+                &self.device_bootstrap_key,
+            )
+            .unwrap();
+    
+            // Keyswitch all output ciphertexts on the GPU
+            self.cuda_engine
+            .discard_keyswitch_lwe_ciphertext_vector(
+                &mut d_input_vec,
+                &d_output_ciphertext_vector,
+                &self.device_keyswitch_key,
+            )
+            .unwrap();
+    
+            // Transfer output ctxts back to host
+            input_vec = self.cuda_engine
+            .convert_lwe_ciphertext_vector(&d_input_vec)
+            .unwrap();
+
+            // Create ptxt of 0
+            let zero_ptxt: Plaintext64 = self.default_engine.create_plaintext_from(&0).unwrap();
+            // Write the output wires of each LUT 
+            for i in 0..gates.len() {
+                let mut ct_extract: LweCiphertext64;
+                ct_extract = self.default_engine.trivially_encrypt_lwe_ciphertext(self.lwe_dim_orig.to_lwe_size(), &zero_ptxt).unwrap();
+                let output_index = key_to_index[&gates[i].get_output_wire()];
+                let err_chk = self.default_engine.discard_load_lwe_ciphertext(&mut ct_extract, &input_vec, LweCiphertextIndex(i));
+                match err_chk {
+                    Ok(_value) => {}
+                    Err(error) => {
+                        println!("Error: {}", error);
+                    }
+                }
+                *eval_values[output_index]
+                    .write()
+                    .expect("Failed to acquire write lock") = ct_extract;
+            }
+            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
+        }
+        key_to_index
+            .iter()
+            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
+            .collect()
+    }
+
+    fn decrypt_outputs(
+        &mut self,
+        enc_wire_map: &HashMap<String, LweCiphertext64>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+        for output_wire in self.circuit.output_wires {
+            let pt_extract = self.default_engine.decrypt_lwe_ciphertext(&self.host_client_key, &enc_wire_map[output_wire]).unwrap();
+            let raw_pt_extract = self.default_engine.retrieve_plaintext(&pt_extract).unwrap();
+            let output = raw_pt_extract >> 59;
+            let carry = output % 2;
+            let output = ((output >> 1) + carry) % (1 << 4);
+            decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(output));
+        }
+
+        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
+            if i > 10 && !verbose {
+                println!(
+                    "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
+                    color::Fg(color::LightYellow),
+                    color::Fg(color::Reset)
+                );
+                break;
+            } else {
+                println!(" {}: {}", wire, val);
+            }
+        }
+
+        decrypted_outputs
+    }
+}
+
+impl<'a> EvalCircuit<LweCiphertext32> for CircuitCuda<'a> {
+    fn encrypt_inputs(
+        &mut self,
+        wire_set: &HashSet<String>,
+        input_wire_map: &HashMap<String, PtxtType>,
+    ) -> HashMap<String, LweCiphertext32> {
+        let zero_ptxt: Plaintext32 = self.default_engine.create_plaintext_from(&PLAINTEXT_FALSE).unwrap();
+        let mut enc_wire_map = wire_set
+            .iter()
+            .map(|wire| (wire.to_string(), self.default_engine.trivially_encrypt_lwe_ciphertext(self.lwe_dim_orig.to_lwe_size(), &zero_ptxt).unwrap()))
+            .collect::<HashMap<_, _>>();
+        for input_wire in self.circuit.input_wires {
+            // if no inputs are provided, initialize it to false
+            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
+                enc_wire_map.insert(input_wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &zero_ptxt, self.noise).unwrap());
+            } else if !input_wire_map.contains_key(input_wire) {
+                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
+            } else {
+                match input_wire_map[input_wire] {        
+                    PtxtType::Bool(v) => {
+                        let shifted_input = if v {PLAINTEXT_TRUE} else {PLAINTEXT_FALSE};
+                        let input_pt: Plaintext32 = self.default_engine.create_plaintext_from(&shifted_input).unwrap();
+                        enc_wire_map
+                            .insert(input_wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &input_pt, self.noise).unwrap());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        for wire in self.circuit.dff_outputs {
+            enc_wire_map
+                .insert(wire.to_string(), self.default_engine.encrypt_lwe_ciphertext(&self.host_client_key, &zero_ptxt, self.noise).unwrap());
+        }
+
+        enc_wire_map
+    }
+
+    fn evaluate_encrypted(
+        &mut self,
+        enc_wire_map: &HashMap<String, LweCiphertext32>,
+        _cycle: usize,
+        _ptxt_type: &str,
+    ) -> HashMap<String, LweCiphertext32> {
+        // Make sure the sort circuit function has run.
+        assert!(self.circuit.gates.is_empty());
+        // Make sure the compute_levels function has run.
+        assert!(self.circuit.ordered_gates.is_empty());
+
+        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+            .iter()
+            .enumerate()
+            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
+            .unzip();
+
+        // For each level
+        let total_levels = self.circuit.level_map.len();
+        for (level, gates) in self
+            .circuit
+            .level_map
+            .iter_mut()
+            .sorted_by_key(|(level, _)| *level)
+        {
+            // Create HashMaps to store gate counts and storage indices for each gate type
+            let mut gate_counts: HashMap<GateType, usize> = HashMap::new();
+            let mut gate_idx_by_type: HashMap<GateType, usize> = HashMap::new();
+            // Iterate through the gates and count each gate type
+            for gate in gates.clone() {
+                let counter = gate_counts.entry(gate.get_gate_type()).or_insert(0);
+                *counter += 1;
+                gate_idx_by_type.entry(gate.get_gate_type()).or_insert(0);
+            }
+            
+            // Create a HashMap to store ciphertext vectors for inputs to GPU gates
+            let mut gate_vec_map: HashMap<GateType, Vec<LweCiphertextVector32>> = HashMap::new();
+            for (gate_type, gate_count) in gate_counts.clone() {
+                let mut gate_vec: Vec<LweCiphertextVector32> = vec![];
+                let tmp_vec: LweCiphertextVector32 = self.default_engine
+                .zero_encrypt_lwe_ciphertext_vector(&self.host_client_key, self.noise, LweCiphertextCount(gate_count))
+                .unwrap();
+                gate_vec.push(tmp_vec);
+                if gate_type != GateType::Not { // Need two input vectors for all gates except NOT (no MUX support either)
+                    let tmp_vec_2: LweCiphertextVector32 = self.default_engine
+                    .zero_encrypt_lwe_ciphertext_vector(&self.host_client_key, self.noise, LweCiphertextCount(gate_count))
+                    .unwrap();
+                    gate_vec.push(tmp_vec_2);
+                }
+                gate_vec_map.insert(gate_type, gate_vec);
+            }
+
+            // Store ctxts in corresponding ctxt vectors
+            for gate in gates.iter() {
+                let input_values: Vec<LweCiphertext32> = gate
+                    .get_input_wires()
+                    .iter()
+                    .map(|input| {
+                        // Get the corresponding index in the wires array
+                        let index = match key_to_index.get(input) {
+                            Some(&index) => index,
+                            None => panic!("Input wire {} not in key_to_index map", input),
+                        };
+
+                        // Read the value of the corresponding key
+                        eval_values[index].read().unwrap().clone()
+                    })
+                    .collect();
+
+                // Stores input wires in corresponding vector
+                let array_idx = gate_idx_by_type.get(&gate.get_gate_type()).unwrap();
+                for i in 0..input_values.len() {
+                    gate_vec_map.entry(gate.get_gate_type()).and_modify(|ct_vecs| {
+                        self.default_engine.discard_store_lwe_ciphertext(
+                            &mut ct_vecs[i],
+                            &input_values[i],
+                            LweCiphertextIndex(*array_idx),
+                        ).unwrap();
+                    });
+                }
+                // Update gate counter for next gate
+                gate_idx_by_type.entry(gate.get_gate_type()).and_modify(|ctr| {*ctr += 1});
+            }
+
+            // Upload input vecs to GPU
+            let mut d_input_vecs: HashMap<GateType, CudaLweCiphertextVector32> = HashMap::new();
+            let mut d_input_vecs_2: HashMap<GateType, CudaLweCiphertextVector32> = HashMap::new();
+            for (gate_type, h_input_vecs) in gate_vec_map {
+                let tmp_d_vec = self.cuda_engine.convert_lwe_ciphertext_vector(&h_input_vecs[0]).unwrap();
+                d_input_vecs.insert(gate_type.clone(), tmp_d_vec);
+                if gate_type != GateType::Not {
+                    let tmp_d_vec_2 = self.cuda_engine.convert_lwe_ciphertext_vector(&h_input_vecs[1]).unwrap();
+                    d_input_vecs_2.insert(gate_type, tmp_d_vec_2);    
+                }
+            }
+                
+            // Allocate output ciphertext arrays for bootstrapping
+            let mut h_output_ctxt_vecs: HashMap<GateType, LweCiphertextVector32> = HashMap::new();
+            for (gate_type, gate_count) in gate_counts.clone() {
+                let tmp_h_vec = self.default_engine.zero_encrypt_lwe_ciphertext_vector(&self.host_client_key, self.noise, LweCiphertextCount(gate_count)).unwrap();
+                h_output_ctxt_vecs.insert(gate_type, tmp_h_vec);
+            }
+            
+            // Upload output ciphertext arrays to GPU
+            let mut d_output_ctxt_vecs: HashMap<GateType, CudaLweCiphertextVector32> = HashMap::new();
+            for (gate_type, out_vec) in &h_output_ctxt_vecs {
+                let tmp_d_vec = self.cuda_engine.convert_lwe_ciphertext_vector(out_vec).unwrap();
+                d_output_ctxt_vecs.insert(gate_type.clone(), tmp_d_vec);
+            }
+
+            // Compute all gate types in the level on the GPU
+            for (gate_type, _) in gate_counts {
+                let d_ct_vec_1 = d_input_vecs.get(&gate_type).unwrap();
+                if gate_type == GateType::Not {
+                    d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                        self.cuda_engine.discard_not_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                        ).unwrap();
+                    });
+                } else {
+                    let d_ct_vec_2 = d_input_vecs_2.get(&gate_type).unwrap();
+                    if gate_type == GateType::And {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_and_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });    
+                    } else if gate_type == GateType::Nand {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_nand_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });    
+                    } else if gate_type == GateType::Or {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_or_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });   
+                    } else if gate_type == GateType::Nor {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_nor_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });   
+                    } else if gate_type == GateType::Xor {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_xor_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });   
+                    } else if gate_type == GateType::Xnor {
+                        d_output_ctxt_vecs.entry(gate_type).and_modify(|ct_vec| {
+                            self.cuda_engine.discard_xnor_lwe_ciphertext_vector(
+                                ct_vec,
+                                &d_ct_vec_1,
+                                &d_ct_vec_2,
+                                &self.device_bootstrap_key,
+                                &self.device_keyswitch_key,
+                            ).unwrap();
+                        });   
+                    }
+                }
+            }
+        
+            // Keep track of current index for each output vector 
+            let mut vec_idx_by_gate_type: HashMap<GateType, usize> = HashMap::new();
+
+            // Transfer output ctxt vectors back to host
+            for (gate_type, out_vec) in d_output_ctxt_vecs {
+                h_output_ctxt_vecs.entry(gate_type.clone()).and_modify(|h_ct_vec| {
+                    *h_ct_vec = self.cuda_engine.convert_lwe_ciphertext_vector(&out_vec).unwrap();
+                });
+                vec_idx_by_gate_type.insert(gate_type, 0);
+            }
+
+            // Create ptxt of 0
+            let zero_ptxt: Plaintext32 = self.default_engine.create_plaintext_from(&PLAINTEXT_FALSE).unwrap();
+            
+            // Write the output wires of each LUT 
+            for i in 0..gates.len() {
+                let curr_gate_type : &GateType = &gates[i].get_gate_type();
+                let mut ct_extract: LweCiphertext32;
+                ct_extract = self.default_engine.trivially_encrypt_lwe_ciphertext(self.lwe_dim_orig.to_lwe_size(), &zero_ptxt).unwrap();
+                let output_index = key_to_index[&gates[i].get_output_wire()];
+                let err_chk = self.default_engine.discard_load_lwe_ciphertext(&mut ct_extract, &h_output_ctxt_vecs.get(curr_gate_type).unwrap(), LweCiphertextIndex(*vec_idx_by_gate_type.get(curr_gate_type).unwrap()));
+                match err_chk {
+                    Ok(_value) => {}
+                    Err(error) => {
+                        println!("Error: {}", error);
+                    }
+                }
+                *eval_values[output_index]
+                    .write()
+                    .expect("Failed to acquire write lock") = ct_extract;
+                vec_idx_by_gate_type.entry(curr_gate_type.clone()).and_modify(|ctr| {*ctr += 1});
+            }
+            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
+        }
+        key_to_index
+            .iter()
+            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
+            .collect()
+    }
+
+    fn decrypt_outputs(
+        &mut self,
+        enc_wire_map: &HashMap<String, LweCiphertext32>,
+        verbose: bool,
+    ) -> HashMap<String, PtxtType> {
+        let mut decrypted_outputs = HashMap::new();
+        for output_wire in self.circuit.output_wires {
+            let pt_extract = self.default_engine.decrypt_lwe_ciphertext(&self.host_client_key, &enc_wire_map[output_wire]).unwrap();
+            let raw_pt_extract = self.default_engine.retrieve_plaintext(&pt_extract).unwrap();
+            let output = raw_pt_extract < (1 << 31);
+            decrypted_outputs.insert(output_wire.clone(), PtxtType::Bool(output));
         }
 
         for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
@@ -614,7 +1275,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
     }
 
     fn decrypt_outputs(
-        &self,
+        &mut self,
         enc_wire_map: &HashMap<String, CtxtShortInt>,
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
@@ -872,7 +1533,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
     }
 
     fn decrypt_outputs(
-        &self,
+        &mut self,
         enc_wire_map: &HashMap<String, FheType>,
         verbose: bool,
     ) -> HashMap<String, PtxtType> {
@@ -989,7 +1650,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
     }
 
     fn decrypt_outputs(
-        &self,
+        &mut self,
         enc_wire_map: &HashMap<String, CtxtShortInt>,
         verbose: bool,
     ) -> HashMap<String, PtxtType> {

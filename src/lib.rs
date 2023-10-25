@@ -250,6 +250,15 @@ pub fn parse_args() -> ArgMatches {
                 .required(false),
         )
         .arg(
+            Arg::new("gpu")
+                .long("gpu")
+                .short('g')
+                .help("Enable GPU gate evaluation")
+                .required(false)
+                .conflicts_with("arithmetic")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("cycles")
                 .long("cycles")
                 .short('c')
