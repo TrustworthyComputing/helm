@@ -851,7 +851,7 @@ where
         let f_val = f(decoded_val % modulus, lut_entry) % modulus;
         let encoded_f_val = WopbsInt::encode_radix(f_val, basis, block_nb as u64);
         for (lut_number, radix_encoded_val) in encoded_f_val.iter().enumerate().take(block_nb) {
-            lut.as_mut().get_small_lut_mut(lut_number).as_mut()[lut_index_val as usize] =
+            lut.as_mut().get_small_lut_mut(lut_number)[lut_index_val as usize] =
                 radix_encoded_val * delta;
         }
     }

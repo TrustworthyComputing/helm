@@ -335,11 +335,10 @@ impl<'a> Circuit<'a> {
         // Make sure the compute_levels function has run.
         assert!(self.ordered_gates.is_empty());
 
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = wire_map
+        let eval_values = wire_map
             .iter()
-            .enumerate()
-            .map(|(i, (key, &value))| ((key, i), Arc::new(RwLock::new(value))))
-            .unzip();
+            .map(|(key, &value)| (key.clone(), Arc::new(RwLock::new(value))))
+            .collect::<HashMap<_, _>>();
 
         // For each level
         for (_level, gates) in self.level_map.iter_mut().sorted_by_key(|(level, _)| *level) {
@@ -348,31 +347,20 @@ impl<'a> Circuit<'a> {
                 let input_values: Vec<PtxtType> = gate
                     .get_input_wires()
                     .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not in key_to_index", input),
-                        };
-                        // Read the value of the corresponding key
-                        *eval_values[index].read().unwrap()
-                    })
+                    .map(|input| *eval_values[input].read().unwrap())
                     .collect();
-                let output_value = gate.evaluate(&input_values);
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
 
                 // Update the value of the corresponding key
-                *eval_values[output_index]
+                *eval_values[&gate.get_output_wire()]
                     .write()
-                    .expect("Failed to acquire write lock") = output_value;
+                    .expect("Failed to acquire write lock") = gate.evaluate(&input_values);
             });
         }
 
-        key_to_index
+        // Convert eval_values to the expected return type
+        eval_values
             .iter()
-            .map(|(&key, &index)| (key.to_string(), *eval_values[index].read().unwrap()))
+            .map(|(key, value)| (key.to_string(), *value.read().unwrap()))
             .collect::<HashMap<String, PtxtType>>()
     }
 }
@@ -477,11 +465,10 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
         // Make sure the compute_levels function has run.
         assert!(self.circuit.ordered_gates.is_empty());
 
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+        let eval_values = enc_wire_map
             .iter()
-            .enumerate()
-            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
-            .unzip();
+            .map(|(key, value)| (key.clone(), Arc::new(RwLock::new(value.clone()))))
+            .collect::<HashMap<_, _>>();
 
         // For each level
         let total_levels = self.circuit.level_map.len();
@@ -496,32 +483,20 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
                 let input_values: Vec<CtxtBool> = gate
                     .get_input_wires()
                     .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not in key_to_index map", input),
-                        };
-
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
+                    .map(|input| eval_values[input].read().unwrap().clone())
                     .collect();
-                let output_value = gate.evaluate_encrypted(&self.server_key, &input_values, cycle);
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
 
                 // Update the value of the corresponding key
-                *eval_values[output_index].write().unwrap() = output_value;
+                *eval_values[&gate.get_output_wire()].write().unwrap() =
+                    gate.evaluate_encrypted(&self.server_key, &input_values, cycle);
             });
             println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         }
 
-        key_to_index
+        eval_values
             .iter()
-            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
-            .collect()
+            .map(|(key, value)| (key.to_string(), value.read().unwrap().clone()))
+            .collect::<HashMap<_, _>>()
     }
 
     fn decrypt_outputs(
@@ -596,11 +571,10 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
         // Make sure the compute_levels function has run.
         assert!(self.circuit.ordered_gates.is_empty());
 
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+        let eval_values = enc_wire_map
             .iter()
-            .enumerate()
-            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
-            .unzip();
+            .map(|(key, value)| (key.clone(), Arc::new(RwLock::new(value.clone()))))
+            .collect::<HashMap<_, _>>();
 
         // For each level
         let total_levels = self.circuit.level_map.len();
@@ -615,16 +589,7 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
                 let mut input_values: Vec<CtxtShortInt> = gate
                     .get_input_wires()
                     .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not in key_to_index map", input),
-                        };
-
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
+                    .map(|input| eval_values[input].read().unwrap().clone())
                     .collect();
                 let output_value = {
                     if gate.get_gate_type() == GateType::Lut {
@@ -634,21 +599,18 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
                     }
                 };
 
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
-
                 // Update the value of the corresponding key
-                *eval_values[output_index]
+                *eval_values[&gate.get_output_wire()]
                     .write()
                     .expect("Failed to acquire write lock") = output_value;
             });
             println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         }
 
-        key_to_index
+        eval_values
             .iter()
-            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
-            .collect()
+            .map(|(key, value)| (key.to_string(), value.read().unwrap().clone()))
+            .collect::<HashMap<_, _>>()
     }
 
     fn decrypt_outputs(
@@ -705,7 +667,9 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                     "u16" => FheType::U16(FheUint16::try_encrypt(0u16, &self.client_key).unwrap()),
                     "u32" => FheType::U32(FheUint32::try_encrypt(0u32, &self.client_key).unwrap()),
                     "u64" => FheType::U64(FheUint64::try_encrypt(0u64, &self.client_key).unwrap()),
-                    "u128" => FheType::U128(FheUint128::try_encrypt(0u128, &self.client_key).unwrap()),
+                    "u128" => {
+                        FheType::U128(FheUint128::try_encrypt(0u128, &self.client_key).unwrap())
+                    }
                     _ => unreachable!(),
                 };
 
@@ -761,11 +725,10 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         // Make sure the compute_levels function has run.
         assert!(self.circuit.ordered_gates.is_empty());
 
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+        let eval_values = enc_wire_map
             .iter()
-            .enumerate()
-            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
-            .unzip();
+            .map(|(key, value)| (key.clone(), Arc::new(RwLock::new(value.clone()))))
+            .collect::<HashMap<_, _>>();
 
         set_server_key(self.server_key.clone());
         rayon::broadcast(|_| set_server_key(self.server_key.clone()));
@@ -802,14 +765,8 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                                     _ => unreachable!(),
                                 };
                             } else {
-                                let index = match key_to_index.get(in_wire) {
-                                    Some(&index) => index,
-                                    None => {
-                                        panic!("Input wire {} not in key_to_index map", in_wire)
-                                    }
-                                };
                                 // Read the value of the corresponding key
-                                ctxt_operand = eval_values[index].read().unwrap().clone();
+                                ctxt_operand = eval_values[in_wire].read().unwrap().clone();
                             }
                         }
                         let ct_op = match ctxt_operand {
@@ -850,16 +807,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                         let input_values: Vec<FheType> = gate
                             .get_input_wires()
                             .iter()
-                            .map(|input| {
-                                // Get the corresponding index in the wires array
-                                let index = match key_to_index.get(input) {
-                                    Some(&index) => index,
-                                    None => panic!("Input wire {} not in key_to_index map", input),
-                                };
-
-                                // Read the value of the corresponding key
-                                eval_values[index].read().unwrap().clone()
-                            })
+                            .map(|input| eval_values[input].read().unwrap().clone())
                             .collect();
 
                         if gate.get_gate_type() == GateType::Add {
@@ -906,11 +854,8 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
                     }
                 };
 
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
-
                 // Update the value of the corresponding key
-                *eval_values[output_index]
+                *eval_values[&gate.get_output_wire()]
                     .write()
                     .expect("Failed to acquire write lock") = output_value;
             });
@@ -920,10 +865,10 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         rayon::broadcast(|_| unset_server_key());
         unset_server_key();
 
-        key_to_index
+        eval_values
             .iter()
-            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
-            .collect()
+            .map(|(key, value)| (key.to_string(), value.read().unwrap().clone()))
+            .collect::<HashMap<_, _>>()
     }
 
     fn decrypt_outputs(
@@ -1001,11 +946,10 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
         // Make sure the compute_levels function has run.
         assert!(self.circuit.ordered_gates.is_empty());
 
-        let (key_to_index, eval_values): (HashMap<_, _>, Vec<_>) = enc_wire_map
+        let eval_values = enc_wire_map
             .iter()
-            .enumerate()
-            .map(|(i, (key, value))| ((key, i), Arc::new(RwLock::new(value.clone()))))
-            .unzip();
+            .map(|(key, value)| (key.clone(), Arc::new(RwLock::new(value.clone()))))
+            .collect::<HashMap<_, _>>();
 
         // For each level
         let total_levels = self.circuit.level_map.len();
@@ -1020,40 +964,28 @@ impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
                 let input_values: Vec<CtxtShortInt> = gate
                     .get_input_wires()
                     .iter()
-                    .map(|input| {
-                        // Get the corresponding index in the wires array
-                        let index = match key_to_index.get(input) {
-                            Some(&index) => index,
-                            None => panic!("Input wire {} not in key_to_index map", input),
-                        };
-
-                        // Read the value of the corresponding key
-                        eval_values[index].read().unwrap().clone()
-                    })
+                    .map(|input| eval_values[input].read().unwrap().clone())
                     .collect();
-                let output_value = gate.evaluate_encrypted_high_precision_lut(
-                    &self.wopbs_shortkey,
-                    &self.wopbs_intkey,
-                    &self.server_intkey,
-                    &input_values,
-                    cycle,
-                );
-
-                // Get the corresponding index in the wires array
-                let output_index = key_to_index[&gate.get_output_wire()];
 
                 // Update the value of the corresponding key
-                *eval_values[output_index]
+                *eval_values[&gate.get_output_wire()]
                     .write()
-                    .expect("Failed to acquire write lock") = output_value;
+                    .expect("Failed to acquire write lock") = gate
+                    .evaluate_encrypted_high_precision_lut(
+                        &self.wopbs_shortkey,
+                        &self.wopbs_intkey,
+                        &self.server_intkey,
+                        &input_values,
+                        cycle,
+                    );
             });
             println!("  Evaluated gates in level [{}/{}]", level, total_levels);
         }
 
-        key_to_index
+        eval_values
             .iter()
-            .map(|(&key, &index)| (key.to_string(), eval_values[index].read().unwrap().clone()))
-            .collect()
+            .map(|(key, value)| (key.to_string(), value.read().unwrap().clone()))
+            .collect::<HashMap<_, _>>()
     }
 
     fn decrypt_outputs(

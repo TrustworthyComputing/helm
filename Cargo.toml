@@ -15,7 +15,7 @@ itertools = "0.10.5"
 rand = "0.8.5"
 rayon = "1.7.0"
 termion = "2.0.1"
-tfhe = { version = "0.4.0", features = ["boolean", "shortint", "integer", "x86_64-unix"] }
+tfhe = { version = "0.4.1", features = ["boolean", "shortint", "integer", "x86_64-unix"] }
 thiserror = "1.0"
 
 [[bin]]
