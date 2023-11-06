@@ -1,3 +1,5 @@
+use crate::{FheType, PtxtType};
+use std::time::Instant;
 use std::{
     cmp::Ordering,
     fmt,
@@ -17,8 +19,6 @@ use tfhe::{
         ServerKey as ServerKeyShortInt,
     },
 };
-use std::time::Instant;
-use crate::{FheType, PtxtType};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GateType {
@@ -69,7 +69,7 @@ impl PartialEq for Gate {
 
 impl PartialOrd for Gate {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.gate_name.partial_cmp(&other.gate_name)
+        Some(self.cmp(other))
     }
 }
 
@@ -299,7 +299,7 @@ impl Gate {
         );
         self.encrypted_lut_output = Some(ret.clone());
         let elapsed_time = Instant::now() - start_time;
-        println!("PBS time: {} us", elapsed_time.as_micros());    
+        println!("PBS time: {} us", elapsed_time.as_micros());
         ret
     }
 

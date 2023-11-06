@@ -40,6 +40,11 @@ cargo build --release
 cargo test --release
 ```
 
+### 1.B) Optionally run all CPU + GPU tests:
+```shell
+cargo test --features gpu --release
+```
+
 ### 2) HELM Command Line Arguments
 ```shell
   -v, --verilog <FILE>              Verilog input file to evaluate
