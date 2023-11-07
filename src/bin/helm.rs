@@ -8,6 +8,8 @@ use tfhe::{
     boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_1_CARRY_1_KS_PBS,
     ConfigBuilder,
 };
+use rand::RngCore;
+use rand::rngs::OsRng;
 
 fn main() {
     ascii::print_art();
@@ -134,48 +136,39 @@ fn main() {
                 {
                     // Gate mode (GPU)
                     let mut start = Instant::now();
-                    // let (lwe_dim, _, glwe_dim, poly_size) = (
-                    //     LweDimension(722),
-                    //     LweDimension(722),
-                    //     GlweDimension(1),
-                    //     PolynomialSize(512),
-                    // );
-                    // let stddev_glwe: f64 = 0.00000004990272175010415;
-                    // let noise = Variance(stddev_glwe.powf(2.0));
-                    // let (dec_lc, dec_bl) = (DecompositionLevelCount(3), DecompositionBaseLog(6));
-                    // let (ks_lc, ks_bl) = (DecompositionLevelCount(4), DecompositionBaseLog(3));
-
-                    let (lwe_dim, _, glwe_dim, poly_size) = (
-                        LweDimension(630),
-                        LweDimension(630),
+                    let (lwe_dim, glwe_dim, poly_size) = (
+                        LweDimension(512),
                         GlweDimension(1),
                         PolynomialSize(1024),
                     );
-                    let stddev_glwe: f64 = 0.00000002980232238769531;
+                    let stddev_glwe = 0.00000002980232238769531_f64;
                     let noise = Variance(stddev_glwe.powf(2.0));
                     let (dec_lc, dec_bl) = (DecompositionLevelCount(3), DecompositionBaseLog(7));
                     let (ks_lc, ks_bl) = (DecompositionLevelCount(8), DecompositionBaseLog(2));
 
                     // Create the necessary engines
-                    // Here we need to create a secret to give to the unix seeder, but we skip the actual secret creation
-                    const UNSAFE_SECRET: u128 = 0;
+                    let mut random_bytes = [0; 16];
+                    OsRng.fill_bytes(&mut random_bytes);
+                
+                    // Convert the random bytes to a u128
+                    let random_u128 = u128::from_be_bytes(random_bytes);                
                     let mut default_engine =
-                        DefaultEngine::new(Box::new(UnixSeeder::new(UNSAFE_SECRET))).unwrap();
+                        DefaultEngine::new(Box::new(UnixSeeder::new(random_u128))).unwrap();
                     let mut parallel_engine =
-                        DefaultParallelEngine::new(Box::new(UnixSeeder::new(UNSAFE_SECRET)))
+                        DefaultParallelEngine::new(Box::new(UnixSeeder::new(random_u128)))
                             .unwrap();
                     let mut cuda_engine = CudaEngine::new(()).unwrap();
 
                     // Generate the keys
-                    let h_input_key: LweSecretKey32 =
+                    let h_input_key =
                         default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();
-                    let h_lut_key: GlweSecretKey32 = default_engine
+                    let h_lut_key : GlweSecretKey32 = default_engine
                         .generate_new_glwe_secret_key(glwe_dim, poly_size)
                         .unwrap();
-                    let h_interm_sk: LweSecretKey32 = default_engine
+                    let h_interm_sk = default_engine
                         .transform_glwe_secret_key_to_lwe_secret_key(h_lut_key.clone())
                         .unwrap();
-                    let h_keyswitch_key: LweKeyswitchKey32 = default_engine
+                    let h_keyswitch_key = default_engine
                         .generate_new_lwe_keyswitch_key(
                             &h_interm_sk,
                             &h_input_key,
@@ -185,7 +178,7 @@ fn main() {
                         )
                         .unwrap();
                     // create a BSK with multithreading
-                    let h_bootstrap_key: LweBootstrapKey32 = parallel_engine
+                    let h_bootstrap_key = parallel_engine
                         .generate_new_lwe_bootstrap_key(
                             &h_input_key,
                             &h_lut_key,
@@ -194,10 +187,10 @@ fn main() {
                             noise,
                         )
                         .unwrap();
-                    let d_fourier_bsk: CudaFourierLweBootstrapKey32 = cuda_engine
+                    let d_fourier_bsk = cuda_engine
                         .convert_lwe_bootstrap_key(&h_bootstrap_key)
                         .unwrap();
-                    let d_fourier_ksk: CudaLweKeyswitchKey32 = cuda_engine
+                    let d_fourier_ksk = cuda_engine
                         .convert_lwe_keyswitch_key(&h_keyswitch_key)
                         .unwrap();
 
@@ -322,18 +315,18 @@ fn main() {
                     let mut cuda_engine = CudaEngine::new(()).unwrap();
                     let cuda_amortized_engine = AmortizedCudaEngine::new(()).unwrap();
 
-                    let h_input_key: LweSecretKey64 =
+                    let h_input_key =
                         default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();
 
                     let h_lut_key: GlweSecretKey64 = default_engine
                         .generate_new_glwe_secret_key(glwe_dim, poly_size)
                         .unwrap();
 
-                    let h_interm_sk: LweSecretKey64 = default_engine
+                    let h_interm_sk = default_engine
                         .transform_glwe_secret_key_to_lwe_secret_key(h_lut_key.clone())
                         .unwrap();
 
-                    let h_keyswitch_key: LweKeyswitchKey64 = default_engine
+                    let h_keyswitch_key = default_engine
                         .generate_new_lwe_keyswitch_key(
                             &h_interm_sk,
                             &h_input_key,
@@ -344,7 +337,7 @@ fn main() {
                         .unwrap();
 
                     // create a BSK with multithreading
-                    let h_bootstrap_key: LweBootstrapKey64 = parallel_engine
+                    let h_bootstrap_key = parallel_engine
                         .generate_new_lwe_bootstrap_key(
                             &h_input_key,
                             &h_lut_key,
@@ -354,11 +347,11 @@ fn main() {
                         )
                         .unwrap();
 
-                    let d_fourier_bsk: CudaFourierLweBootstrapKey64 = cuda_engine
+                    let d_fourier_bsk = cuda_engine
                         .convert_lwe_bootstrap_key(&h_bootstrap_key)
                         .unwrap();
 
-                    let d_fourier_ksk: CudaLweKeyswitchKey64 = cuda_engine
+                    let d_fourier_ksk = cuda_engine
                         .convert_lwe_keyswitch_key(&h_keyswitch_key)
                         .unwrap();
 
