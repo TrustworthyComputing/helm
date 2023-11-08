@@ -194,8 +194,9 @@ pub fn hex_to_bitstring(hex_string: &str) -> String {
 }
 
 pub fn parse_args() -> ArgMatches {
-    Command::new("HELM")
-        .about("HELM: Navigating Homomorphic Evaluation through Gates and Lookups")
+    let mut arg_matches = Command::new("HELM")
+        .about("HELM: Navigating Homomorphic Evaluation through Gates and Lookups");
+    arg_matches = arg_matches
         .arg(
             Arg::new("verilog")
                 .long("verilog")
@@ -266,6 +267,19 @@ pub fn parse_args() -> ArgMatches {
                 .help("Turn verbose printing on")
                 .required(false)
                 .action(ArgAction::SetTrue),
-        )
-        .get_matches()
+        );
+    #[cfg(feature = "gpu")]
+    {
+        arg_matches = arg_matches.arg(
+            Arg::new("gpu")
+                .long("gpu")
+                .short('g')
+                .help("Enable GPU gate evaluation")
+                .required(false)
+                .conflicts_with("arithmetic")
+                .action(ArgAction::SetTrue),
+        );
+    }
+
+    arg_matches.get_matches()
 }

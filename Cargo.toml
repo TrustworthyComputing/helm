@@ -16,8 +16,12 @@ rand = "0.8.5"
 rayon = "1.7.0"
 termion = "2.0.1"
 tfhe = { version = "0.4.1", features = ["boolean", "shortint", "integer", "x86_64-unix"] }
+concrete-core = {git = "https://github.com/TrustworthyComputing/concrete-core", rev = "77f30a2", version = "=1.0.1", features=["backend_default", "backend_default_parallel", "backend_cuda", "x86_64", "concrete-cuda"], optional = true}
 thiserror = "1.0"
 
 [[bin]]
 name = "helm"
 path = "src/bin/helm.rs"
+
+[features]
+gpu = ["dep:concrete-core"]
