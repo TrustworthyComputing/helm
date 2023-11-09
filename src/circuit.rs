@@ -2,7 +2,7 @@ use crate::gates::{Gate, GateType};
 #[cfg(feature = "gpu")]
 use concrete_core::prelude::*;
 #[cfg(feature = "gpu")]
-use concrete_core::specification::parameters::{GlweDimension, LweDimension, PolynomialSize};
+use concrete_core::specification::parameters::LweDimension;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::{
@@ -794,86 +794,85 @@ impl<'a> EvalCircuit<LweCiphertext32> for CircuitCuda<'a> {
                 .par_iter_mut()
                 .for_each(|(gate_type, out_vec)| {
                     let d_ct_vec_1 = d_input_vecs_1.get(&gate_type).unwrap();
-                    let cuda_engine_mut = &mut self.cuda_engine.clone();
                     if *gate_type == GateType::Not {
-                        cuda_engine_mut
+                        self.cuda_engine
                             .discard_not_lwe_ciphertext_vector(
                                 &mut out_vec.write().unwrap().as_mut().unwrap(),
                                 d_ct_vec_1,
+                                0,
                             )
                             .unwrap();
                     } else {
                         let d_ct_vec_2 = d_input_vecs_2.get(&gate_type).unwrap();
                         if *gate_type == GateType::And {
-                            cuda_engine_mut.inc_stream_idx(1);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_and_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    1,
                                 )
                                 .unwrap();
                         } else if *gate_type == GateType::Nand {
-                            cuda_engine_mut.inc_stream_idx(2);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_nand_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    2,
                                 )
                                 .unwrap();
                         } else if *gate_type == GateType::Or {
-                            cuda_engine_mut.inc_stream_idx(3);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_or_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    3,
                                 )
                                 .unwrap();
                         } else if *gate_type == GateType::Nor {
-                            cuda_engine_mut.inc_stream_idx(4);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_nor_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    4,
                                 )
                                 .unwrap();
                         } else if *gate_type == GateType::Xor {
-                            cuda_engine_mut.inc_stream_idx(5);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_xor_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    5,
                                 )
                                 .unwrap();
                         } else if *gate_type == GateType::Xnor {
-                            cuda_engine_mut.inc_stream_idx(6);
-                            cuda_engine_mut
+                            self.cuda_engine
                                 .discard_xnor_lwe_ciphertext_vector(
                                     &mut out_vec.write().unwrap().as_mut().unwrap(),
                                     d_ct_vec_1,
                                     d_ct_vec_2,
                                     &self.device_bootstrap_key,
                                     &self.device_keyswitch_key,
+                                    6,
                                 )
                                 .unwrap();
                         }
                     }
                 });
-            println!("DONE");
             // Keep track of current index for each output vector
             let mut vec_idx_by_gate_type = d_output_ctxt_vecs
                 .iter()

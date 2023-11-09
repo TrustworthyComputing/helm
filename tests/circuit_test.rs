@@ -136,7 +136,7 @@ fn encrypted_16_bit_multiplier_gpu() {
     let mut default_engine = DefaultEngine::new(Box::new(UnixSeeder::new(unsafe_secret))).unwrap();
     let mut parallel_engine =
         DefaultParallelEngine::new(Box::new(UnixSeeder::new(unsafe_secret))).unwrap();
-    let mut cuda_engine = CudaEngine::new(()).unwrap();
+    let cuda_engine = CudaEngine::new(()).unwrap();
 
     // Generate the keys
     let h_input_key = default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();
@@ -224,7 +224,7 @@ fn encrypted_32_bit_multiplier_gpu() {
     let mut default_engine = DefaultEngine::new(Box::new(UnixSeeder::new(unsafe_secret))).unwrap();
     let mut parallel_engine =
         DefaultParallelEngine::new(Box::new(UnixSeeder::new(unsafe_secret))).unwrap();
-    let mut cuda_engine = CudaEngine::new(()).unwrap();
+    let cuda_engine = CudaEngine::new(()).unwrap();
 
     // Generate the keys
     let h_input_key = default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();

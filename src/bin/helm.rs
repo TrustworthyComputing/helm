@@ -137,7 +137,7 @@ fn main() {
                     // Gate mode (GPU)
                     let mut start = Instant::now();
                     let (lwe_dim, glwe_dim, poly_size) = (
-                        LweDimension(630),
+                        LweDimension(512),
                         GlweDimension(1),
                         PolynomialSize(1024),
                     );
@@ -157,7 +157,7 @@ fn main() {
                     let mut parallel_engine =
                         DefaultParallelEngine::new(Box::new(UnixSeeder::new(random_u128)))
                             .unwrap();
-                    let mut cuda_engine = CudaEngine::new(()).unwrap();
+                    let cuda_engine = CudaEngine::new(()).unwrap();
 
                     // Generate the keys
                     let h_input_key =
