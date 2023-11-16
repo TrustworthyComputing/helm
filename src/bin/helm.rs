@@ -2,14 +2,16 @@
 use concrete_core::prelude::*;
 use debug_print::debug_println;
 use helm::{ascii, circuit, circuit::EvalCircuit, verilog_parser};
+#[cfg(feature = "gpu")]
+use rand::rngs::OsRng;
+#[cfg(feature = "gpu")]
+use rand::RngCore;
 use std::time::Instant;
 use termion::color;
 use tfhe::{
     boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_1_CARRY_1_KS_PBS,
     ConfigBuilder,
 };
-use rand::RngCore;
-use rand::rngs::OsRng;
 
 fn main() {
     ascii::print_art();
@@ -136,11 +138,8 @@ fn main() {
                 {
                     // Gate mode (GPU)
                     let mut start = Instant::now();
-                    let (lwe_dim, glwe_dim, poly_size) = (
-                        LweDimension(512),
-                        GlweDimension(1),
-                        PolynomialSize(1024),
-                    );
+                    let (lwe_dim, glwe_dim, poly_size) =
+                        (LweDimension(512), GlweDimension(1), PolynomialSize(1024));
                     let stddev_glwe = 0.00000002980232238769531_f64;
                     let noise = Variance(stddev_glwe.powf(2.0));
                     let (dec_lc, dec_bl) = (DecompositionLevelCount(3), DecompositionBaseLog(7));
@@ -149,19 +148,17 @@ fn main() {
                     // Create random seed
                     let mut random_bytes = [0; 16];
                     OsRng.fill_bytes(&mut random_bytes);
-                    let random_u128 = u128::from_be_bytes(random_bytes);                
+                    let random_u128 = u128::from_be_bytes(random_bytes);
 
                     // Create the necessary engines
                     let mut default_engine =
                         DefaultEngine::new(Box::new(UnixSeeder::new(random_u128))).unwrap();
                     let mut parallel_engine =
-                        DefaultParallelEngine::new(Box::new(UnixSeeder::new(random_u128)))
-                            .unwrap();
+                        DefaultParallelEngine::new(Box::new(UnixSeeder::new(random_u128))).unwrap();
                     let cuda_engine = CudaEngine::new(()).unwrap();
 
                     // Generate the keys
-                    let h_input_key =
-                        default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();
+                    let h_input_key = default_engine.generate_new_lwe_secret_key(lwe_dim).unwrap();
                     let h_lut_key: GlweSecretKey32 = default_engine
                         .generate_new_glwe_secret_key(glwe_dim, poly_size)
                         .unwrap();
@@ -288,8 +285,7 @@ fn main() {
             );
             // LUT mode
             let mut start = Instant::now();
-            let (client_key, server_key) =
-                tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1_KS_PBS); // single bit ctxt
+            let (client_key, server_key) = tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1_KS_PBS); // single bit ctxt
             let mut circuit = circuit::LutCircuit::new(client_key, server_key, circuit_ptxt);
             println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 

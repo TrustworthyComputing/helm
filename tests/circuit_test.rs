@@ -122,11 +122,8 @@ fn encrypted_16_bit_multiplier_gpu() {
     circuit.compute_levels();
 
     // Encrypted
-    let (lwe_dim, glwe_dim, poly_size) = (
-        LweDimension(512),
-        GlweDimension(1),
-        PolynomialSize(1024),
-    );
+    let (lwe_dim, glwe_dim, poly_size) =
+        (LweDimension(512), GlweDimension(1), PolynomialSize(1024));
     let stddev_glwe = 0.00000002980232238769531_f64;
     let noise = Variance(stddev_glwe.powf(2.0));
     let (dec_lc, dec_bl) = (DecompositionLevelCount(3), DecompositionBaseLog(7));
@@ -210,11 +207,8 @@ fn encrypted_32_bit_multiplier_gpu() {
     circuit.compute_levels();
 
     // Encrypted
-    let (lwe_dim, glwe_dim, poly_size) = (
-        LweDimension(512),
-        GlweDimension(1),
-        PolynomialSize(1024),
-    );
+    let (lwe_dim, glwe_dim, poly_size) =
+        (LweDimension(512), GlweDimension(1), PolynomialSize(1024));
     let stddev_glwe = 0.00000002980232238769531_f64;
     let noise = Variance(stddev_glwe.powf(2.0));
     let (dec_lc, dec_bl) = (DecompositionLevelCount(3), DecompositionBaseLog(7));
