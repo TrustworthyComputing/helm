@@ -137,6 +137,9 @@ cargo run --bin preprocessor --release  \
 cargo run --bin helm --release -- --verilog ./hdl-benchmarks/processed-netlists/c880.v
 ```
 
+## Acknowledgments
+This work was supported by the National Science Foundation (Award #2239334).
+
 <p align="center">
     <img src="./logos/twc.png" height="20%" width="20%">
 </p>
