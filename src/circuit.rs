@@ -12,16 +12,12 @@ use std::{
 };
 use termion::color;
 use tfhe::{
-    boolean::ciphertext::Ciphertext as CtxtBool,
-    boolean::prelude::*,
-    integer::{
-        wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
-    },
+    boolean::{ciphertext::Ciphertext as CtxtBool, prelude::*},
     prelude::*,
     set_server_key,
     shortint::{
-        ciphertext::Ciphertext as CtxtShortInt, wopbs::WopbsKey as WopbsKeyShortInt,
-        ClientKey as ClientKeyShortInt, ServerKey as ServerKeyShortInt,
+        ciphertext::Ciphertext as CtxtShortInt, ClientKey as ClientKeyShortInt,
+        ServerKey as ServerKeyShortInt,
     },
     unset_server_key, FheUint128, FheUint16, FheUint32, FheUint64, FheUint8,
 };
@@ -42,14 +38,18 @@ pub trait EvalCircuit<C> {
         wire_set: &HashSet<String>,
         input_wire_map: &HashMap<String, PtxtType>,
     ) -> HashMap<String, C>;
-
     fn evaluate_encrypted(
         &mut self,
         enc_wire_map: &HashMap<String, C>,
         current_cycle: usize,
         ptxt_type: &str,
     ) -> HashMap<String, C>;
-
+    fn init_ready(&mut self) -> HashMap<String, C>;
+    fn evaluate_ready(
+        &mut self,
+        enc_wire_map: &HashMap<String, C>,
+        valid_outputs: &mut HashMap<String, C>,
+    );
     fn decrypt_outputs(
         &mut self,
         enc_wire_map: &HashMap<String, C>,
@@ -94,15 +94,7 @@ pub struct ArithCircuit<'a> {
     circuit: Circuit<'a>,
     server_key: tfhe::ServerKey,
     client_key: tfhe::ClientKey,
-}
-
-// Note: this is not used as there is no easy way to get LUTs with more than six inputs.
-pub struct HighPrecisionLutCircuit<'a> {
-    circuit: Circuit<'a>,
-    wopbs_shortkey: WopbsKeyShortInt,
-    wopbs_intkey: WopbsKeyInt,
-    client_key: ClientKeyInt,
-    server_intkey: ServerKeyInt,
+    global_ptxt_type: &'a str,
 }
 
 fn is_numeric_string(s: &str) -> bool {
@@ -442,30 +434,14 @@ impl<'a> ArithCircuit<'a> {
     pub fn new(
         client_key: tfhe::ClientKey,
         server_key: tfhe::ServerKey,
-        circuit: Circuit,
-    ) -> ArithCircuit {
+        circuit: Circuit<'a>,
+        global_ptxt_type: &'a str,
+    ) -> ArithCircuit<'a> {
         ArithCircuit {
             client_key,
             server_key,
             circuit,
-        }
-    }
-}
-
-impl<'a> HighPrecisionLutCircuit<'a> {
-    pub fn new(
-        wopbs_shortkey: WopbsKeyShortInt,
-        wopbs_intkey: WopbsKeyInt,
-        client_key: ClientKeyInt,
-        server_intkey: ServerKeyInt,
-        circuit: Circuit,
-    ) -> HighPrecisionLutCircuit {
-        HighPrecisionLutCircuit {
-            wopbs_shortkey,
-            wopbs_intkey,
-            client_key,
-            server_intkey,
-            circuit,
+            global_ptxt_type,
         }
     }
 }
@@ -501,6 +477,30 @@ impl<'a> EvalCircuit<CtxtBool> for GateCircuit<'a> {
         }
 
         enc_wire_map
+    }
+
+    fn init_ready(&mut self) -> HashMap<String, CtxtBool> {
+        let ready_map = self
+            .circuit
+            .output_wires
+            .iter()
+            .map(|wire| (wire.to_string(), self.server_key.trivial_encrypt(false)))
+            .collect::<HashMap<_, _>>();
+        ready_map
+    }
+
+    fn evaluate_ready(
+        &mut self,
+        enc_wire_map: &HashMap<String, CtxtBool>,
+        valid_outputs: &mut HashMap<String, CtxtBool>,
+    ) {
+        valid_outputs.par_iter_mut().for_each(|(key, valid_value)| {
+            if let Some(enc_value) = enc_wire_map.get(key) {
+                *valid_value =
+                    self.server_key
+                        .mux(enc_wire_map.get("READY").unwrap(), enc_value, valid_value);
+            }
+        });
     }
 
     fn evaluate_encrypted(
@@ -999,6 +999,36 @@ impl<'a> EvalCircuit<CtxtShortInt> for LutCircuit<'a> {
         enc_wire_map
     }
 
+    fn init_ready(&mut self) -> HashMap<String, CtxtShortInt> {
+        let ready_map = self
+            .circuit
+            .output_wires
+            .iter()
+            .map(|wire| (wire.to_string(), self.server_key.create_trivial(0)))
+            .collect::<HashMap<_, _>>();
+        ready_map
+    }
+
+    fn evaluate_ready(
+        &mut self,
+        enc_wire_map: &HashMap<String, CtxtShortInt>,
+        valid_outputs: &mut HashMap<String, CtxtShortInt>,
+    ) {
+        let trivial_one = self.server_key.create_trivial(1);
+        let not_ready = self
+            .server_key
+            .sub(&trivial_one, enc_wire_map.get("READY").unwrap());
+        valid_outputs.par_iter_mut().for_each(|(key, valid_value)| {
+            if let Some(enc_value) = enc_wire_map.get(key) {
+                let tmp = self
+                    .server_key
+                    .mul(&enc_value, enc_wire_map.get("READY").unwrap());
+                let tmp_2 = self.server_key.mul(&valid_value, &not_ready);
+                *valid_value = self.server_key.add(&tmp, &tmp_2);
+            }
+        });
+    }
+
     fn evaluate_encrypted(
         &mut self,
         enc_wire_map: &HashMap<String, CtxtShortInt>,
@@ -1094,6 +1124,7 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
             PtxtType::U128(_) => "u128",
             _ => unreachable!(),
         };
+        self.global_ptxt_type = ptxt_type;
         let mut enc_wire_map = HashMap::<String, _>::new();
         for wire in wire_set {
             enc_wire_map.insert(wire.to_string(), FheType::None);
@@ -1151,6 +1182,118 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         }
 
         enc_wire_map
+    }
+
+    fn init_ready(&mut self) -> HashMap<String, FheType> {
+        let ready_map = self
+            .circuit
+            .output_wires
+            .iter()
+            .map(|wire| {
+                (
+                    wire.to_string(),
+                    match self.global_ptxt_type {
+                        "u8" => FheType::U8(FheUint8::encrypt_trivial(0u8)),
+                        "u16" => FheType::U16(FheUint16::encrypt_trivial(0u16)),
+                        "u32" => FheType::U32(FheUint32::encrypt_trivial(0u32)),
+                        "u64" => FheType::U64(FheUint64::encrypt_trivial(0u64)),
+                        "u128" => FheType::U128(FheUint128::encrypt_trivial(0u128)),
+                        _ => unreachable!(),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        ready_map
+    }
+
+    fn evaluate_ready(
+        &mut self,
+        enc_wire_map: &HashMap<String, FheType>,
+        valid_outputs: &mut HashMap<String, FheType>,
+    ) {
+        let trivial_one = match self.global_ptxt_type {
+            "u8" => FheType::U8(FheUint8::encrypt_trivial(1u8)),
+            "u16" => FheType::U16(FheUint16::encrypt_trivial(1u16)),
+            "u32" => FheType::U32(FheUint32::encrypt_trivial(1u32)),
+            "u64" => FheType::U64(FheUint64::encrypt_trivial(1u64)),
+            "u128" => FheType::U128(FheUint128::encrypt_trivial(1u128)),
+            _ => unreachable!(),
+        };
+        let not_ready = match (trivial_one, enc_wire_map.get("READY").unwrap()) {
+            (FheType::U8(ct1_value), FheType::U8(ct2_value)) => FheType::U8(ct1_value - ct2_value),
+            (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                FheType::U16(ct1_value - ct2_value)
+            }
+            (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                FheType::U32(ct1_value - ct2_value)
+            }
+            (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                FheType::U64(ct1_value - ct2_value)
+            }
+            (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                FheType::U128(ct1_value - ct2_value)
+            }
+            _ => panic!("evaluate_ready_sub"),
+        };
+
+        valid_outputs.par_iter_mut().for_each(|(key, valid_value)| {
+            if let Some(enc_value) = enc_wire_map.get(key) {
+                let tmp = match (enc_value, enc_wire_map.get("READY").unwrap()) {
+                    (FheType::U8(ct1_value), FheType::U8(ct2_value)) => {
+                        FheType::U8(ct1_value * ct2_value)
+                    }
+                    (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                        FheType::U16(ct1_value * ct2_value)
+                    }
+                    (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                        FheType::U32(ct1_value * ct2_value)
+                    }
+                    (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                        FheType::U64(ct1_value * ct2_value)
+                    }
+                    (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                        FheType::U128(ct1_value * ct2_value)
+                    }
+                    _ => panic!("evaluate_ready_mult_1"),
+                };
+                let tmp_2 = match (&valid_value, &not_ready) {
+                    (FheType::U8(ct1_value), FheType::U8(ct2_value)) => {
+                        FheType::U8(ct1_value * ct2_value)
+                    }
+                    (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                        FheType::U16(ct1_value * ct2_value)
+                    }
+                    (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                        FheType::U32(ct1_value * ct2_value)
+                    }
+                    (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                        FheType::U64(ct1_value * ct2_value)
+                    }
+                    (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                        FheType::U128(ct1_value * ct2_value)
+                    }
+                    _ => panic!("evaluate_ready_mult_2"),
+                };
+                *valid_value = match (tmp, tmp_2) {
+                    (FheType::U8(ct1_value), FheType::U8(ct2_value)) => {
+                        FheType::U8(ct1_value + ct2_value)
+                    }
+                    (FheType::U16(ct1_value), FheType::U16(ct2_value)) => {
+                        FheType::U16(ct1_value + ct2_value)
+                    }
+                    (FheType::U32(ct1_value), FheType::U32(ct2_value)) => {
+                        FheType::U32(ct1_value + ct2_value)
+                    }
+                    (FheType::U64(ct1_value), FheType::U64(ct2_value)) => {
+                        FheType::U64(ct1_value + ct2_value)
+                    }
+                    (FheType::U128(ct1_value), FheType::U128(ct2_value)) => {
+                        FheType::U128(ct1_value + ct2_value)
+                    }
+                    _ => panic!("evaluate_ready_add"),
+                };
+            }
+        });
     }
 
     fn evaluate_encrypted(
@@ -1320,125 +1463,6 @@ impl<'a> EvalCircuit<FheType> for ArithCircuit<'a> {
         for output_wire in self.circuit.output_wires {
             let decrypted = enc_wire_map[output_wire].decrypt(&self.client_key);
             decrypted_outputs.insert(output_wire.clone(), decrypted);
-        }
-
-        for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {
-            if i > 10 && !verbose {
-                println!(
-                    "{}[!]{} More than ten output_wires, pass `--verbose` to see output.",
-                    color::Fg(color::LightYellow),
-                    color::Fg(color::Reset)
-                );
-                break;
-            } else {
-                println!(" {}: {}", wire, val);
-            }
-        }
-
-        decrypted_outputs
-    }
-}
-
-impl<'a> EvalCircuit<CtxtShortInt> for HighPrecisionLutCircuit<'a> {
-    fn encrypt_inputs(
-        &mut self,
-        wire_set: &HashSet<String>,
-        input_wire_map: &HashMap<String, PtxtType>,
-    ) -> HashMap<String, CtxtShortInt> {
-        let mut enc_wire_map = wire_set
-            .iter()
-            .map(|wire| (wire.to_string(), self.client_key.encrypt_one_block(0u64)))
-            .collect::<HashMap<_, _>>();
-        for input_wire in self.circuit.input_wires {
-            // if no inputs are provided, initialize it to false
-            if input_wire_map.is_empty() || input_wire_map.contains_key("dummy") {
-                enc_wire_map.insert(input_wire.to_string(), self.client_key.encrypt_one_block(0));
-            } else if !input_wire_map.contains_key(input_wire) {
-                panic!("\n Input wire \"{}\" not found in input wires!", input_wire);
-            } else {
-                match input_wire_map[input_wire] {
-                    PtxtType::Bool(v) => {
-                        enc_wire_map.insert(
-                            input_wire.to_string(),
-                            self.client_key.encrypt_one_block(v as u64),
-                        );
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-        for wire in self.circuit.dff_outputs {
-            enc_wire_map.insert(wire.to_string(), self.client_key.encrypt_one_block(0));
-        }
-
-        enc_wire_map
-    }
-
-    fn evaluate_encrypted(
-        &mut self,
-        enc_wire_map: &HashMap<String, CtxtShortInt>,
-        cycle: usize,
-        _ptxt_type: &str,
-    ) -> HashMap<String, CtxtShortInt> {
-        // Make sure the sort circuit function has run.
-        assert!(self.circuit.gates.is_empty());
-        // Make sure the compute_levels function has run.
-        assert!(self.circuit.ordered_gates.is_empty());
-
-        let eval_values = enc_wire_map
-            .iter()
-            .map(|(key, value)| (key.clone(), Arc::new(RwLock::new(value.clone()))))
-            .collect::<HashMap<_, _>>();
-
-        // For each level
-        let total_levels = self.circuit.level_map.len();
-        for (level, gates) in self
-            .circuit
-            .level_map
-            .iter_mut()
-            .sorted_by_key(|(level, _)| *level)
-        {
-            // Evaluate all the gates in the level in parallel
-            gates.par_iter_mut().for_each(|gate| {
-                let input_values: Vec<CtxtShortInt> = gate
-                    .get_input_wires()
-                    .iter()
-                    .map(|input| eval_values[input].read().unwrap().clone())
-                    .collect();
-
-                // Update the value of the corresponding key
-                *eval_values[&gate.get_output_wire()]
-                    .write()
-                    .expect("Failed to acquire write lock") = gate
-                    .evaluate_encrypted_high_precision_lut(
-                        &self.wopbs_shortkey,
-                        &self.wopbs_intkey,
-                        &self.server_intkey,
-                        &input_values,
-                        cycle,
-                    );
-            });
-            println!("  Evaluated gates in level [{}/{}]", level, total_levels);
-        }
-
-        eval_values
-            .iter()
-            .map(|(key, value)| (key.to_string(), value.read().unwrap().clone()))
-            .collect::<HashMap<_, _>>()
-    }
-
-    fn decrypt_outputs(
-        &mut self,
-        enc_wire_map: &HashMap<String, CtxtShortInt>,
-        verbose: bool,
-    ) -> HashMap<String, PtxtType> {
-        let mut decrypted_outputs = HashMap::new();
-
-        for output_wire in self.circuit.output_wires {
-            let decrypted = self
-                .client_key
-                .decrypt_one_block(&enc_wire_map[output_wire]);
-            decrypted_outputs.insert(output_wire.clone(), PtxtType::U64(decrypted));
         }
 
         for (i, (wire, val)) in decrypted_outputs.iter().sorted().enumerate() {

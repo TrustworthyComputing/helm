@@ -4,26 +4,13 @@ use debug_print::debug_println;
 #[cfg(feature = "gpu")]
 use helm::circuit::CircuitCuda;
 use helm::{
-    circuit::{
-        ArithCircuit, Circuit, EvalCircuit, GateCircuit, HighPrecisionLutCircuit, LutCircuit,
-    },
+    circuit::{ArithCircuit, Circuit, EvalCircuit, GateCircuit, LutCircuit},
     verilog_parser, PtxtType,
 };
 use itertools::Itertools;
 use std::{collections::HashMap, vec};
 use tfhe::{
-    boolean::gen_keys,
-    generate_keys,
-    integer::{
-        wopbs::WopbsKey as WopbsKeyInt, ClientKey as ClientKeyInt, ServerKey as ServerKeyInt,
-    },
-    shortint::{
-        parameters::{
-            parameters_wopbs_message_carry::WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
-            PARAM_MESSAGE_1_CARRY_1, PARAM_MESSAGE_2_CARRY_1_KS_PBS,
-        },
-        wopbs::WopbsKey as WopbsKeyShortInt,
-    },
+    boolean::gen_keys, generate_keys, shortint::parameters::PARAM_MESSAGE_2_CARRY_1_KS_PBS,
     ConfigBuilder,
 };
 
@@ -325,68 +312,6 @@ fn encrypted_eight_bit_adder_lut() {
 }
 
 #[test]
-fn encrypted_eight_bit_adder_high_precision_lut() {
-    let datatype = "bool";
-    let (gates_set, wire_set, input_wires, _, _, _, _) = verilog_parser::read_verilog_file(
-        "hdl-benchmarks/processed-netlists/8-bit-adder-lut-high-precision.v",
-        false,
-    );
-    let input_wire_map = verilog_parser::read_input_wires(
-        "hdl-benchmarks/test-cases/8-bit-adder.inputs.csv",
-        datatype,
-    );
-
-    let empty = vec![];
-    let mut circuit_ptxt = Circuit::new(gates_set, &input_wires, &empty, &empty);
-    circuit_ptxt.sort_circuit();
-    circuit_ptxt.compute_levels();
-    let mut ptxt_wire_map = circuit_ptxt.initialize_wire_map(&wire_set, &input_wire_map, datatype);
-
-    // Encrypted
-    let (client_key_shortint, server_key_shortint) =
-        tfhe::shortint::gen_keys(PARAM_MESSAGE_1_CARRY_1); // single bit ctxt
-    let client_key = ClientKeyInt::from(client_key_shortint.clone());
-    let server_key = ServerKeyInt::from_shortint(&client_key, server_key_shortint.clone());
-
-    let wopbs_key_shortint = WopbsKeyShortInt::new_wopbs_key(
-        &client_key_shortint,
-        &server_key_shortint,
-        &WOPBS_PARAM_MESSAGE_1_CARRY_1_KS_PBS,
-    );
-    let wopbs_key = WopbsKeyInt::from(wopbs_key_shortint.clone());
-
-    // Plaintext
-    for input_wire in &input_wires {
-        ptxt_wire_map.insert(input_wire.to_string(), input_wire_map[input_wire]);
-    }
-    ptxt_wire_map = circuit_ptxt.evaluate(&ptxt_wire_map);
-
-    let mut circuit = HighPrecisionLutCircuit::new(
-        wopbs_key_shortint,
-        wopbs_key,
-        client_key.clone(),
-        server_key,
-        circuit_ptxt,
-    );
-    let mut enc_wire_map = EvalCircuit::encrypt_inputs(&mut circuit, &wire_set, &input_wire_map);
-    enc_wire_map = EvalCircuit::evaluate_encrypted(&mut circuit, &enc_wire_map, 1, datatype);
-
-    let mut dec_wire_map = HashMap::new();
-    for wire_name in enc_wire_map.keys().sorted() {
-        dec_wire_map.insert(
-            wire_name.to_string(),
-            client_key.decrypt_one_block(&enc_wire_map[wire_name]),
-        );
-    }
-
-    // Check that encrypted and plaintext evaluations are equal
-    for key in ptxt_wire_map.keys() {
-        assert_eq!(ptxt_wire_map[key], PtxtType::Bool(dec_wire_map[key] != 0));
-    }
-    debug_println!("wire map: {:?}", dec_wire_map);
-}
-
-#[test]
 fn encrypted_chi_squared_arithmetic() {
     let datatype = "u16";
     let (gates_set, wire_set, input_wires, _, _, _, _) = verilog_parser::read_verilog_file(
@@ -405,7 +330,7 @@ fn encrypted_chi_squared_arithmetic() {
         )
         .build();
     let (client_key, server_key) = generate_keys(config); // integer ctxt
-    let mut circuit = ArithCircuit::new(client_key.clone(), server_key, circuit_ptxt);
+    let mut circuit = ArithCircuit::new(client_key.clone(), server_key, circuit_ptxt, datatype);
 
     // Input set 1
     let input_wire_map = verilog_parser::read_input_wires(

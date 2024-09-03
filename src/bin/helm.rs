@@ -86,7 +86,7 @@ fn main() {
             .build();
         let mut start = Instant::now();
         let (client_key, server_key) = generate_keys(config); // integer ctxt
-        let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt);
+        let mut circuit = circuit::ArithCircuit::new(client_key, server_key, circuit_ptxt, "none");
         println!("KeyGen done in {} seconds.", start.elapsed().as_secs_f64());
 
         let input_wire_map =
@@ -246,6 +246,8 @@ fn main() {
                 start = Instant::now();
                 let mut enc_wire_map =
                     EvalCircuit::encrypt_inputs(&mut circuit, &wire_set, &input_wire_map);
+                let mut ready_map = EvalCircuit::init_ready(&mut circuit);
+                let mut ready_flag = false;
                 println!(
                     "Encryption done in {} seconds.",
                     start.elapsed().as_secs_f64()
@@ -259,6 +261,11 @@ fn main() {
                         1,
                         arithmetic_type,
                     );
+                    if num_cycles > 1 && enc_wire_map.contains_key("READY") {
+                        // sequential
+                        ready_flag = true; 
+                        EvalCircuit::evaluate_ready(&mut circuit, &enc_wire_map, &mut ready_map);
+                    }
                     println!(
                         "Cycle {}) Evaluation done in {} seconds.\n",
                         cycle,
@@ -269,9 +276,15 @@ fn main() {
                 // Client decrypts the output of the circuit
                 start = Instant::now();
                 println!("Encrypted Evaluation:");
-                let decrypted_outputs =
-                    EvalCircuit::decrypt_outputs(&mut circuit, &enc_wire_map, verbose);
-                verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
+                if ready_flag {
+                    let decrypted_outputs =
+                        EvalCircuit::decrypt_outputs(&mut circuit, &ready_map, verbose);
+                    verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
+                } else {
+                    let decrypted_outputs =
+                        EvalCircuit::decrypt_outputs(&mut circuit, &enc_wire_map, verbose);
+                    verilog_parser::write_output_wires(outputs_filename, &decrypted_outputs);
+                }
                 println!(
                     "Decryption done in {} seconds.",
                     start.elapsed().as_secs_f64()

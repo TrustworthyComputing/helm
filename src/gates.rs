@@ -244,12 +244,12 @@ impl Gate {
         input_values: &[Ciphertext],
         cycle: usize,
     ) -> Ciphertext {
-        if let Some(encrypted_gate_output) = self.encrypted_gate_output.clone() {
-            if self.cycle == cycle {
-                println!("Found cycle {}, returning", cycle);
-                return encrypted_gate_output;
-            }
-        }
+        // if let Some(encrypted_gate_output) = self.encrypted_gate_output.clone() {
+        //     if self.cycle == cycle {
+        //         println!("Found cycle {}, returning", cycle);
+        //         return encrypted_gate_output;
+        //     }
+        // }
 
         let encrypted_gate_output = match self.gate_type {
             GateType::And => server_key.and(&input_values[0], &input_values[1]),
