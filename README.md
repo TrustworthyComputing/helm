@@ -1,4 +1,4 @@
-<h1 align="center">HELM <a href="https://github.com/jimouris/helm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
+<h1 align="center">HELM <a href="https://github.com/TrustworthyComputing/helm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
 
 <h2 align="center">Navigating Homomorphic Evaluation through Gates and Lookups</h2>
 
